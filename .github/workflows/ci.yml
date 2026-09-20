@@ -113,8 +113,21 @@ jobs:
         with:
           context: .
           push: false
+          # `load` hands the image to the Docker daemon so the steps below can run it.
+          # Without it the image only lives in the buildkit cache and `docker run`
+          # silently falls back to pulling the tag from Docker Hub.
+          load: true
           tags: ownership-bot:ci
+          # Attestations make buildx produce a manifest list, which the docker
+          # exporter used by `load` cannot export. They are irrelevant for a smoke test.
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: The image must actually run
         run: docker run --rm ownership-bot:ci --help
+      - name: The container must not run as root
+        run: |
+          uid="$(docker run --rm --entrypoint id ownership-bot:ci -u)"
+          echo "uid=${uid}"
+          test "${uid}" != "0"
