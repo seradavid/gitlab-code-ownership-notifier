@@ -35,7 +35,7 @@ jobs:
         run: pytest --junitxml=report.xml
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pytest-${{ matrix.python-version }}
           path: report.xml
@@ -94,7 +94,7 @@ jobs:
           if not checked["decisions"] or not audited["decisions"]:
               sys.exit("expected a decision from both conditions")
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: offline-decisions

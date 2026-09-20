@@ -44,7 +44,7 @@ jobs:
           print(f"tag={tag} package={version}")
           sys.exit(0 if tag == version else f"tag {tag} does not match version {version}")
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
