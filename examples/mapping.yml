@@ -1,0 +1,24 @@
+# Rollout mapping: the human statement of intent that the bootstrap script renders
+# into CODEOWNERS drafts (docs/design.md appendix B).
+#
+#   python scripts/bootstrap_codeowners.py --mapping examples/mapping.yml \
+#       --teams-file examples/teams.yml --out-dir drafts
+#
+# Keys are project paths as GitLab knows them (`namespace/project`).
+
+repositories:
+  acme/services/payment-service:
+    target_branch: master
+    default_owner: "@acme/teams/platform"
+    rules:
+      "src/main/java/com/acme/payments/**": "@acme/teams/payments @alice"
+      "src/main/java/com/acme/payments/settlement/**": "@acme/teams/payments @bob"
+      "src/main/resources/db/migration/**": "@acme/teams/devops"
+    ci_inputs:
+      mode: report # phase 2 of the rollout: observe before notifying
+      manifest-project: example-org/ownership
+
+  acme/services/notification-service:
+    default_owner: "@acme/teams/platform"
+    rules:
+      "src/main/java/com/acme/notifications/**": "@acme/teams/platform"

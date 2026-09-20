@@ -1,0 +1,11 @@
+# Example CODEOWNERS used by the offline smoke test (`--mode report`).
+# Shape mirrors a repository whose payment code lives in one package.
+
+* @acme/teams/platform
+
+[Payments]
+src/main/java/com/acme/payments/** @acme/teams/payments @alice
+src/main/java/com/acme/payments/settlement/** @acme/teams/payments @bob
+
+[Database]
+src/main/resources/db/migration/** @acme/teams/devops

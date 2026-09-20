@@ -1,0 +1,56 @@
+name: Bug report
+description: Something behaves differently from what docs/design.md says it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: the design notes explain why several "obvious" behaviours are
+        deliberate (no draft gate, `allow_failure: true` on both jobs, ownership read from the
+        target branch). If your report is about one of those, say so and we can discuss the
+        trade-off rather than the bug.
+
+        Do not paste tokens or webhook URLs. Redact them.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: A sentence or two, ideally naming the section of the design notes.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the relevant job log lines and the `decision.json` artifact if the job produced one.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag, image digest, or the commit you are running.
+    validations:
+      required: true
+  - type: input
+    id: gitlab
+    attributes:
+      label: GitLab version and tier
+      description: e.g. "17.4 self-managed, Free"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options: [report, label, notify]
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: The `teams.yml` entries and CODEOWNERS lines involved, with names and channels redacted.
+      render: yaml
+    validations:
+      required: false

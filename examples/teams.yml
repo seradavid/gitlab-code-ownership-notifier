@@ -1,0 +1,65 @@
+# Central metadata for the ownership bot.
+#
+# NOTE: the values below are illustrative — replace them with your real team names,
+# channels, labels and rosters. `scripts/bootstrap_codeowners.py` prints a skeleton of
+# this file into its report for every owner token it does not recognise.
+#
+# Ownership itself is NOT declared here: it lives in each repository's
+# `.gitlab/CODEOWNERS`. This file only holds what CODEOWNERS cannot express.
+
+version: 1
+
+# Applies to every team unless that team overrides it.
+defaults:
+  branches: ["**"]                        # target branches the team is notified for
+  notify_on: [mr_pipeline_green, merged_without_owner_approval, ownership_changed]
+  min_mr_age_minutes: 0                   # >0: ignore MRs younger than this
+  min_owned_files: 1                      # >0: ignore MRs touching fewer owned files
+  mentions: []                            # optional Microsoft 365 UPNs to @mention
+
+teams:
+  payments:
+    # The token written in CODEOWNERS for this team. Keep @group-shaped tokens even
+    # while the team has no GitLab group yet: when the subgroup is created, nothing
+    # in any CODEOWNERS file has to change.
+    codeowners_token: "@acme/teams/payments"
+    gitlab_group: acme/teams/payments     # preferred roster source (Group members API)
+    members: [alice, bob]                 # interim roster — unioned with the group (§7.5)
+    teams_channel: "Payments Engineering" # key the Power Automate flow switches on
+    label: team::payments                 # the team's PRE-EXISTING dashboard label
+    branches: [master, develop, "release/**"]
+
+  devops:
+    codeowners_token: "@acme/teams/devops"
+    gitlab_group: acme/teams/devops       # reserved for when the subgroup exists
+    members: [carol, dave]                # today: every team shares one group, so this is the roster
+    teams_channel: "DevOps / Production"
+    label: team::devops
+    branches: [prod, "release/**"]
+    notify_on: [merged_without_owner_approval, ownership_changed]
+
+  platform:
+    codeowners_token: "@acme/teams/platform"
+    members: [erin, frank]                # teams without a GitLab group
+    teams_channel: "Platform"
+    label: team::platform
+
+# Applied BEFORE CODEOWNERS matching, because CODEOWNERS has no negation.
+ignore:
+  - "**/target/**"                        # Maven build output
+  - "**/dist/**"                          # TS build output
+  - "**/*.lock"
+  - "pnpm-lock.yaml"
+  - "docs/**"
+  - "**/*.md"                             # tunable: do doc changes warrant a notification?
+
+ignore_authors: [renovate-bot, dependency-bot, "*-ci-bot"]   # bot MRs are not paged
+skip_label: ownership-bot::skip            # escape hatch: hotfixes, reverts, incidents
+
+# Optional, normally empty: only for components that genuinely move between
+# directories or repositories, where a path pattern would go stale.
+module_overlay:
+  - module: "*:payment-core"
+    owner: payments
+  - module: "@acme/payments-*"
+    owner: payments

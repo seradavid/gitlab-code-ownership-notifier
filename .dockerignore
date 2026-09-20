@@ -1,0 +1,43 @@
+# The image only needs the CLI and its packaging metadata; everything else is
+# development material that would otherwise be sent to the daemon and bust the
+# layer cache on every edit.
+
+# Version control and CI
+.git
+.gitignore
+.gitattributes
+.github
+.gitlab-ci.yml
+
+# Development-only trees
+tests/
+docs/
+examples/
+scripts/
+templates/
+drafts/
+
+# Tooling and caches
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+*.egg-info
+build
+dist
+
+# Repository documents the image does not need
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+.editorconfig
+
+# Run-time artefacts
+decision.json
+audit.json
+drift-report.json
+drift-report.md
+report.xml

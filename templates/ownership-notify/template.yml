@@ -1,0 +1,103 @@
+# Ownership notification component (docs/design.md §6).
+#
+# Publishes two jobs from one component:
+#
+#   ownership-merge-audit  stage `.pre`  first step of the post-merge pipeline
+#   ownership-mr-check     stage `.post` last step of the MR pipeline
+#
+# `.pre` and `.post` always exist, so consumers never have to touch their
+# `stages:` list and neither job can block a build or a deployment
+# (`allow_failure: true` on both).
+#
+# The MR-check job does not trust its position: it asks the pipelines API whether
+# any *earlier* job failed without `allow_failure` before doing anything
+# (`upstream_failed()`), so the guarantee "we only ping on a green pipeline" holds
+# even if `.post` is ever scheduled differently. Set `OWNERSHIP_VERIFY_UPSTREAM=false`
+# to skip that call.
+#
+# Required CI/CD variables (masked, protected):
+#   OWNERSHIP_BOT_TOKEN        project access token with `api` + `write_repository`
+#                              (also able to read the manifest project)
+#   OWNERSHIP_PA_WORKFLOW_URL  Power Automate "when an HTTP request is received" URL
+#   OWNERSHIP_PA_SHARED_SECRET shared secret for the HMAC signature (§10)
+#
+# Never use `CI_JOB_TOKEN` here: it cannot read MR diffs, approvals or labels.
+
+spec:
+  inputs:
+    image:
+      description: "Image containing the ownership-bot CLI."
+      default: "registry.example.com/ownership-notify/bot:1.0.0"
+    mode:
+      description: "report | label | notify. Use `report` while rolling out (§12 phase 2)."
+      default: "notify"
+    manifest-project:
+      description: "Path of the repository that holds teams.yml."
+      default: "example-org/ownership"
+    manifest-ref:
+      description: "Ref of teams.yml to read."
+      default: "main"
+    mr-check-enabled:
+      description: "Publish the ownership-mr-check job."
+      type: boolean
+      default: true
+    merge-audit-enabled:
+      description: "Publish the ownership-merge-audit job."
+      type: boolean
+      default: true
+    audit-branch:
+      description: "Only audit pushes to this branch (default: the default branch)."
+      default: "$CI_DEFAULT_BRANCH"
+---
+
+.ownership-bot-base:
+  image:
+    name: $[[ inputs.image ]]
+    entrypoint: [""]
+  variables:
+    OWNERSHIP_MODE: $[[ inputs.mode ]]
+    OWNERSHIP_MANIFEST_PROJECT: $[[ inputs.manifest-project ]]
+    OWNERSHIP_MANIFEST_REF: $[[ inputs.manifest-ref ]]
+    GIT_STRATEGY: none
+  allow_failure: true
+  interruptible: false
+  cache: []
+
+# ---------------------------------------------------------------------------
+# Condition 2 — "merged without an owner approval" (audit, never blocking).
+# ---------------------------------------------------------------------------
+ownership-merge-audit:
+  extends: .ownership-bot-base
+  stage: .pre
+  needs: []
+  allow_failure: true
+  rules:
+    - if: '"$[[ inputs.merge-audit-enabled ]]" == "false"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "$[[ inputs.audit-branch ]]"'
+  script:
+    - ownership-bot merge-audit
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - decision.json
+
+# ---------------------------------------------------------------------------
+# Condition 1 — "the pipeline turned green for an MR whose diff is owned".
+# ---------------------------------------------------------------------------
+ownership-mr-check:
+  extends: .ownership-bot-base
+  stage: .post
+  allow_failure: true
+  rules:
+    - if: '"$[[ inputs.mr-check-enabled ]]" == "false"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - ownership-bot mr-check
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - decision.json

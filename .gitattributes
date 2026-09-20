@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+*.py text diff=python
+*.md text
+*.yml text
+*.yaml text
+*.json text
+
+# Keep the component template's leading `spec:` block diffable.
+templates/**/template.yml text
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.gif binary
+*.pdf binary
+
+# GitHub language statistics: the docs are not the product.
+docs/* linguist-documentation
+examples/* linguist-documentation
+CHANGELOG.md linguist-documentation

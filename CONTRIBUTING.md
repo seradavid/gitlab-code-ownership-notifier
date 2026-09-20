@@ -1,0 +1,69 @@
+# Contributing
+
+Thanks for taking a look. This is a small, deliberately boring tool: two CI jobs, no service,
+no state. The design rationale is in [`docs/design.md`](docs/design.md) — please read §4 and
+§9 before proposing behaviour changes, because most "obvious" improvements are ruled out by a
+Free-tier constraint.
+
+## Getting set up
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest                      # 105 tests, no network access needed
+```
+
+Nothing in the test suite touches a GitLab instance: the decision tables are pure functions,
+and the job runners are exercised against a stub client. Keep it that way — if a change needs
+a live API to test, it probably needs another seam instead.
+
+## Before you open a pull request
+
+```bash
+pytest                                   # must be green
+python scripts/check_component.py        # the CI/CD component must stay valid
+```
+
+CI runs the same two checks on Python 3.11, 3.12 and 3.13, plus a build of the image.
+
+## What is easy to accept
+
+- Bug fixes with a test that fails before and passes after.
+- New *interpretations* of the notification contract (e.g. another chat backend) behind the
+  existing payload building code.
+- Drift-report additions that only read and report.
+- Documentation fixes, including the design notes.
+
+## What needs discussion first
+
+Open an issue before writing code for:
+
+- **Anything that can fail a pipeline or block a merge.** Both jobs are `allow_failure: true`
+  and exit 0 on every error path; that is a feature, not an oversight.
+- **New required configuration.** Every new field is one more thing fifty repositories have
+  to get right. `teams.yml` should stay small.
+- **New triggers.** The two conditions map to the two pipelines that already exist. Adding an
+  event source (webhook, scheduler, service) is a different architecture and is explained —
+  and rejected — in appendix C of the design notes.
+- **New label types.** The label is both the dashboard signal and the idempotency marker; a
+  second one needs a story for what happens when they disagree.
+
+## Style
+
+- Python 3.11+, standard library first. `requests` and `PyYAML` are the only runtime
+  dependencies and that should not change casually.
+- Pure logic in pure functions; I/O at the edges (`runner.py`, `gitlab.py`, `notify.py`).
+- Comments explain *why*, especially where GitLab's behaviour is surprising. The CODEOWNERS
+  semantics and the write ordering are the two places where a well-meaning refactor can break
+  something subtle.
+- Tests are named after the behaviour they pin down, not the function they call.
+
+## Commits and pull requests
+
+Small commits with a clear message. In the pull request description, say what the change does
+and which part of the design it touches. If it changes behaviour, update `docs/design.md` in
+the same pull request — the code references its section numbers.
+
+## Reporting security issues
+
+Please do not open a public issue; see [`SECURITY.md`](SECURITY.md).

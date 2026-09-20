@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a change in behaviour or a new integration
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The constraints in §4 of the design notes rule out a lot of otherwise reasonable
+        ideas (no scheduler, no service, nothing that can fail a pipeline). Cheap to accept:
+        drift-report additions, another chat backend behind the existing payload contract,
+        and better diagnostics.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is painful today, and who feels it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "do nothing" — what does the current behaviour cost you?
+    validations:
+      required: false
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Does this affect the "never block anything" guarantee?
+      options:
+        - "No: it only reads and reports"
+        - "No: it changes who is notified, not whether a pipeline can fail"
+        - "Yes: it could fail a pipeline or block a merge"
+    validations:
+      required: true
