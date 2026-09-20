@@ -291,6 +291,18 @@ which could fail a pipeline or block a merge need a discussion first.
 - Only one notifier backend (Power Automate). The payload contract is stable and versioned,
   so another backend is a contained addition.
 
+## Acknowledgements
+
+The engine, the tests and most of this documentation were written by
+**[GitHub Copilot](https://github.com/features/copilot)** (DeepSeek V4.1 Flash), working from
+the design in [`docs/design.md`](docs/design.md) and a long series of review comments. The
+requirements, the platform research behind §4, and the review of every change came from the
+maintainer.
+
+Copyright and maintenance stay with the human author: a language model cannot hold copyright,
+so it is deliberately absent from [`LICENSE`](LICENSE) and from the `authors` field in
+`pyproject.toml`.
+
 ## License
 
 [MIT](LICENSE). Use it, fork it, ship it inside your company; a link back is appreciated but
