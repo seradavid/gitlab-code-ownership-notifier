@@ -141,6 +141,15 @@ def _changed_files(args: argparse.Namespace, settings: Settings, client, mr, off
     )
 
 
+def _is_offline(args: argparse.Namespace, settings: Settings) -> bool:
+    """Offline runs have all the inputs locally and never ask GitLab for MR data.
+
+    The check reads the resolved settings rather than the raw arguments, because the local
+    manifest can also come from ``OWNERSHIP_MANIFEST_PATH``.
+    """
+    return bool(args.changed_files_file and settings.manifest_path)
+
+
 def _cmd_mr_check(
     args: argparse.Namespace, ctx: runner.RunContext, settings: Settings, client, offline: bool  # noqa: ANN001
 ) -> None:
@@ -194,8 +203,8 @@ def main(argv: list[str] | None = None) -> int:
 
     client = _client(settings)
 
-    # Offline runs (the demo in the README) need a teams.yml and a changed-files list.
-    offline = bool(args.changed_files_file and args.teams_file)
+    # Offline runs (the demo in the README) need a changed-files list and a local manifest.
+    offline = _is_offline(args, settings)
 
     try:
         manifest = runner.load_manifest_for(settings, client)

@@ -9,9 +9,22 @@ from conftest import CODEOWNERS_TEXT, MANIFEST_TEXT, make_mr
 
 from ownership_bot import runner
 from ownership_bot.config import MODE_LABEL, MODE_NOTIFY, MODE_REPORT, Settings
+from ownership_bot.gitlab import GitLabError
 from ownership_bot.notify import NullNotifier
 
 OWNED_FILE = "src/main/java/com/acme/payments/Client.java"
+
+
+class RawFileClient:
+    """Just enough client to exercise where the manifest comes from."""
+
+    def __init__(self, file: str | None = None) -> None:
+        self.file = file
+        self.calls: list[tuple[str, str, str]] = []
+
+    def raw_file(self, project, path, ref):  # noqa: ANN001
+        self.calls.append((str(project), path, ref))
+        return self.file
 
 
 class StubClient:
@@ -177,3 +190,83 @@ def test_upstream_check_can_be_disabled(workspace):
     client = StubClient()
     client.jobs = [{"id": 1, "name": "test", "status": "failed", "allow_failure": False}]
     assert runner.upstream_failed(settings, client) is False
+
+
+# --------------------------------------------------------------- manifest source
+
+
+def test_local_manifest_wins_over_a_configured_repository(tmp_path):
+    """A local file is read, never fetched, so offline runs need no token at all."""
+    teams = tmp_path / "teams.yml"
+    teams.write_text(MANIFEST_TEXT, encoding="utf-8")
+    settings = Settings(manifest_path=str(teams), manifest_project="example-org/ownership")
+    client = RawFileClient(file=MANIFEST_TEXT)
+
+    manifest = runner.load_manifest_for(settings, client)
+
+    assert client.calls == []
+    assert manifest.team("payments").channel == "Payments Engineering"
+    assert manifest.source == str(teams)
+
+
+def test_manifest_is_fetched_from_another_repository():
+    settings = Settings(
+        manifest_project="example-org/ownership",
+        manifest_ref="stable",
+        manifest_file="config/teams.yml",
+    )
+    client = RawFileClient(file=MANIFEST_TEXT)
+
+    manifest = runner.load_manifest_for(settings, client)
+
+    assert client.calls == [("example-org/ownership", "config/teams.yml", "stable")]
+    assert manifest.source == "example-org/ownership/config/teams.yml"
+
+
+def test_remote_manifest_defaults_to_teams_yml_at_the_root():
+    settings = Settings(manifest_project="example-org/ownership", manifest_ref="master")
+    client = RawFileClient(file=MANIFEST_TEXT)
+
+    runner.load_manifest_for(settings, client)
+
+    assert client.calls == [("example-org/ownership", "teams.yml", "master")]
+
+
+def test_a_missing_remote_manifest_names_the_file_and_the_ref():
+    settings = Settings(
+        manifest_project="example-org/ownership",
+        manifest_ref="stable",
+        manifest_file="config/teams.yml",
+    )
+    client = RawFileClient(file=None)  # the file does not exist in the repository
+
+    with pytest.raises(GitLabError) as excinfo:
+        runner.load_manifest_for(settings, client)
+
+    message = str(excinfo.value)
+    assert "config/teams.yml" in message
+    assert "stable" in message
+
+
+def test_no_manifest_at_all_explains_both_options():
+    settings = Settings()
+
+    with pytest.raises(GitLabError) as excinfo:
+        runner.load_manifest_for(settings, client=None)
+
+    message = str(excinfo.value)
+    assert "OWNERSHIP_MANIFEST_PATH" in message
+    assert "OWNERSHIP_MANIFEST_PROJECT" in message
+
+
+def test_a_client_without_a_manifest_repository_says_so():
+    """The two misconfigurations are reported separately: no token vs no repository."""
+    settings = Settings()
+    client = RawFileClient(file=MANIFEST_TEXT)
+
+    with pytest.raises(GitLabError) as excinfo:
+        runner.load_manifest_for(settings, client)
+
+    message = str(excinfo.value)
+    assert "no manifest repository configured" in message
+    assert "OWNERSHIP_MANIFEST_PROJECT" in message

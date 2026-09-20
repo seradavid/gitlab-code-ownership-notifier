@@ -45,21 +45,37 @@ class RunContext:
 
 
 def load_manifest_for(settings: Settings, client: GitLab | None) -> Manifest:
-    """Local override first (handy for dry runs), otherwise fetch from the manifest repo."""
+    """Load ``teams.yml`` from a local file, or from another repository's API.
+
+    The local file wins, which is what makes offline runs and dry runs possible. When
+    none is configured, the file is fetched from ``manifest_project`` at ``manifest_ref``
+    -- any project the bot token can read, not just the one running the pipeline.
+    """
     if settings.manifest_path:
+        log.info("manifest: %s (local file)", settings.manifest_path)
         return load_manifest(settings.manifest_path)
 
-    if not (client and settings.manifest_project):
+    if not client:
         raise GitLabError(
-            "no manifest: pass --teams-file, or set OWNERSHIP_MANIFEST_PROJECT (+ bot token)"
+            "no manifest: set OWNERSHIP_MANIFEST_PATH (or --teams-file) to read a local "
+            "file, or provide a bot token so OWNERSHIP_MANIFEST_PROJECT can be fetched"
+        )
+    if not settings.manifest_project:
+        raise GitLabError(
+            "no manifest repository configured: set OWNERSHIP_MANIFEST_PROJECT to fetch "
+            "teams.yml, or OWNERSHIP_MANIFEST_PATH (or --teams-file) to read a local file"
         )
 
-    text = client.raw_file(settings.manifest_project, "teams.yml", settings.manifest_ref)
+    path = settings.manifest_file or "teams.yml"
+    text = client.raw_file(settings.manifest_project, path, settings.manifest_ref)
     if text is None:
         raise GitLabError(
-            f"teams.yml not found in {settings.manifest_project}@{settings.manifest_ref}"
+            f"{path} not found in {settings.manifest_project}@{settings.manifest_ref} "
+            "(check OWNERSHIP_MANIFEST_FILE/REF, and that the token can read that project)"
         )
-    return load_manifest_text(text, source=f"{settings.manifest_project}/teams.yml")
+
+    log.info("manifest: %s/%s@%s", settings.manifest_project, path, settings.manifest_ref)
+    return load_manifest_text(text, source=f"{settings.manifest_project}/{path}")
 
 
 def fetch_codeowners(

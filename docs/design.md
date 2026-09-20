@@ -193,7 +193,13 @@ Notes that matter:
   is expressed.
 - **`module_overlay:` is normally empty** and exists only for components that genuinely move
   between directories. Identity comes from the nearest `pom.xml` / `package.json`.
-- The bot fetches `teams.yml` and the relevant CODEOWNERS file with the bot token.
+- The bot reads `teams.yml` from a **local file** when one is configured — that is how offline
+  runs and dry runs need no token at all — and otherwise fetches it from the manifest
+  repository with the bot token. The local file wins. The remote side takes a project, a ref
+  and a path (default `teams.yml`), so the manifest can live in a project that runs no
+  pipelines of its own, which is the point of having one central manifest.
+- The relevant **CODEOWNERS** file is fetched with the same token, from the merge request's
+  target branch (§7.1).
 
 ### 7.4 Branch scoping
 

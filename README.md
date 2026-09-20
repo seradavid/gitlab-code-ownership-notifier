@@ -129,15 +129,36 @@ unlabelled and the next pipeline run retries instead of silently dropping the pi
 | Variable | Meaning |
 | --- | --- |
 | `OWNERSHIP_BOT_TOKEN` | project access token with `api` + `write_repository`. Required for anything that reads or writes. |
-| `OWNERSHIP_MANIFEST_PROJECT` / `OWNERSHIP_MANIFEST_REF` | repository (and ref) holding `teams.yml`. |
+| `OWNERSHIP_MANIFEST_PATH` | local `teams.yml` to read instead of fetching anything. Also settable with `--teams-file`. |
+| `OWNERSHIP_MANIFEST_PROJECT` / `OWNERSHIP_MANIFEST_REF` / `OWNERSHIP_MANIFEST_FILE` | repository, ref and path of `teams.yml` (defaults: `main` and `teams.yml`). |
 | `OWNERSHIP_MODE` | `report` \| `label` \| `notify` (default `notify`). |
 | `OWNERSHIP_PA_WORKFLOW_URL` | Power Automate "when an HTTP request is received" URL. |
 | `OWNERSHIP_PA_SHARED_SECRET` | HMAC secret; the flow must verify `X-Ownership-Signature`. |
 | `OWNERSHIP_VERIFY_UPSTREAM` | `false` skips the "did an earlier job fail?" check. |
 | `OWNERSHIP_DECISION_ARTIFACT` | where the machine-readable decision lands (default `decision.json`). |
 
-Set the first four as **masked, protected** CI/CD variables. A project access token works
-on any license on self-managed GitLab; group access tokens are Premium.
+Set the token, the manifest source and the two Power Automate values as **masked, protected**
+CI/CD variables. A project access token works on any license on self-managed GitLab; group
+access tokens are Premium.
+
+### Where `teams.yml` lives
+
+Two sources, and the **local file always wins** — that is what makes offline runs possible.
+
+| Source | Configure with | Notes |
+| --- | --- | --- |
+| A local file | `OWNERSHIP_MANIFEST_PATH`, or `--teams-file` on the CLI | Nothing is fetched and no token is needed. |
+| Any repository | `OWNERSHIP_MANIFEST_PROJECT` + `OWNERSHIP_MANIFEST_REF` + `OWNERSHIP_MANIFEST_FILE` | Fetched through the API, so the manifest can live in a project nobody runs pipelines in — which is the point of one central manifest. Any ref, any path within it. |
+
+Two operational details that bite:
+
+* **The token must be able to read that repository.** A *project* access token belongs to the
+  project it was created in, so its bot user has to be added as a member (Reporter is enough)
+  of the manifest project. A group access token, or a dedicated bot user's personal token,
+  avoids that step.
+* **The component runs with `GIT_STRATEGY: none`**, so there is no checkout inside the job:
+  local-file mode is for developer machines and for pipelines that do check out the repository.
+  In the component, use the repository source.
 
 The `ownership-mr-check` job does not trust its position in the pipeline: it asks the
 pipelines API whether any earlier job failed without `allow_failure` before doing

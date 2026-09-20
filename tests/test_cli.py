@@ -42,6 +42,9 @@ def isolated_env(monkeypatch):
         "OWNERSHIP_DECISION_ARTIFACT",
         "OWNERSHIP_MODE",
         "OWNERSHIP_MANIFEST_PROJECT",
+        "OWNERSHIP_MANIFEST_REF",
+        "OWNERSHIP_MANIFEST_FILE",
+        "OWNERSHIP_MANIFEST_PATH",
         "CI_PROJECT_ID",
         "CI_MERGE_REQUEST_IID",
         "CI_COMMIT_SHA",
@@ -97,3 +100,61 @@ def test_synthesised_mr_defaults_to_opened_and_honours_the_flags():
 
 def test_iid_flag_reaches_the_settings():
     assert settings_for("--iid", "77", "mr-check").merge_request_iid == "77"
+
+
+# ------------------------------------------------------------- manifest source
+
+
+def test_manifest_defaults_to_teams_yml_on_main():
+    settings = settings_for("mr-check")
+
+    assert (settings.manifest_project, settings.manifest_ref, settings.manifest_file) == (
+        "",
+        "main",
+        "teams.yml",
+    )
+    assert settings.manifest_path == ""
+
+
+def test_manifest_repository_comes_from_the_environment(monkeypatch):
+    monkeypatch.setenv("OWNERSHIP_MANIFEST_PROJECT", "example-org/ownership")
+    monkeypatch.setenv("OWNERSHIP_MANIFEST_REF", "stable")
+    monkeypatch.setenv("OWNERSHIP_MANIFEST_FILE", "config/teams.yml")
+
+    settings = settings_for("mr-check")
+
+    assert settings.manifest_project == "example-org/ownership"
+    assert settings.manifest_ref == "stable"
+    assert settings.manifest_file == "config/teams.yml"
+
+
+def test_local_manifest_path_comes_from_the_environment(monkeypatch):
+    monkeypatch.setenv("OWNERSHIP_MANIFEST_PATH", "/etc/ownership/teams.yml")
+
+    assert settings_for("mr-check").manifest_path == "/etc/ownership/teams.yml"
+
+
+def test_teams_file_flag_sets_the_local_manifest():
+    settings = settings_for("--teams-file", "examples/teams.yml", "mr-check")
+
+    assert settings.manifest_path == "examples/teams.yml"
+
+
+def test_offline_needs_both_local_inputs(monkeypatch):
+    """A changed-files list plus a local manifest, however the manifest was configured."""
+    args = cli._parse_args(["--changed-files-file", "files.txt", "mr-check"])
+
+    assert cli._is_offline(args, settings_for("mr-check")) is False
+    assert cli._is_offline(args, settings_for("--teams-file", "teams.yml", "mr-check")) is True
+
+    # The case that used to be missed: the manifest arriving through the environment.
+    monkeypatch.setenv("OWNERSHIP_MANIFEST_PATH", "examples/teams.yml")
+    assert cli._is_offline(args, settings_for("mr-check")) is True
+
+    # No changed-files list means the diff still has to come from the API.
+    assert (
+        cli._is_offline(
+            cli._parse_args(["mr-check"]), settings_for("--teams-file", "teams.yml", "mr-check")
+        )
+        is False
+    )

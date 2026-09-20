@@ -29,9 +29,10 @@ class Settings:
     merge_request_iid: str = ""
     target_branch: str = ""
     diff_base_sha: str = ""
-    # Ownership metadata (central repo holding teams.yml)
+    # Ownership metadata: either a local file, or a repository + ref + path to fetch it from
     manifest_project: str = ""
     manifest_ref: str = "main"
+    manifest_file: str = "teams.yml"
     manifest_path: str = ""
     # Behaviour
     mode: str = MODE_NOTIFY
@@ -88,6 +89,8 @@ def from_env(overrides: dict | None = None) -> Settings:
         diff_base_sha=_first("CI_MERGE_REQUEST_DIFF_BASE_SHA"),
         manifest_project=_first("OWNERSHIP_MANIFEST_PROJECT"),
         manifest_ref=_first("OWNERSHIP_MANIFEST_REF") or "main",
+        manifest_file=_first("OWNERSHIP_MANIFEST_FILE") or "teams.yml",
+        manifest_path=_first("OWNERSHIP_MANIFEST_PATH"),
         mode=_first("OWNERSHIP_MODE") or MODE_NOTIFY,
         verify_upstream=(_first("OWNERSHIP_VERIFY_UPSTREAM") or "true").lower()
         not in ("false", "0", "no"),
