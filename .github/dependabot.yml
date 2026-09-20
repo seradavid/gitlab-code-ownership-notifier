@@ -11,10 +11,18 @@ updates:
       dev-dependencies:
         dependency-type: development
 
+  # One pull request for every action bump, on purpose: several of these move in
+  # lockstep and per-action PRs silently break the pairing — upload-artifact@v7
+  # against download-artifact@v4, or build-push-action without setup-buildx-action.
+  # A grouped PR also means one rebase and one green CI run instead of six.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns: ["*"]
 
   - package-ecosystem: docker
     directory: /
