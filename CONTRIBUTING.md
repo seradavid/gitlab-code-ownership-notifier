@@ -10,7 +10,7 @@ Free-tier constraint.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # 105 tests, no network access needed
+pytest                      # 128 tests, no network access needed
 ```
 
 Nothing in the test suite touches a GitLab instance: the decision tables are pure functions,
@@ -71,7 +71,7 @@ The project is published from two hosts, and the tag conventions differ:
 | Host | Tag | What runs |
 | --- | --- | --- |
 | GitLab | `0.1.0` | `verify-release` re-runs the tests, `build-image` pushes the engine image as `:<tag>`, `create-release` publishes the version to the CI/CD Catalog |
-| GitHub | `v0.1.0` | builds the sdist and wheel, then publishes to PyPI and the image to GHCR |
+| GitHub | `v0.1.0` | packages the project and checks the tag against the version, then pushes the image to GHCR |
 
 GitLab asks for a semantic version on component releases, so the plain `0.1.0` form is the
 safe one there; the GitHub workflow expects the `v` prefix. Push the same commit to both:
@@ -85,6 +85,26 @@ Before tagging on GitLab, bump the component's `image` input default in
 and the engine image are pinned to the same version. Publishing to the CI/CD Catalog also
 needs a one-time toggle in the project (Settings → General → Visibility → CI/CD Catalog
 project) and a project description.
+
+A tag pipeline reads the `.gitlab-ci.yml` **at that tag**, so a fix on `master` does not help
+an existing tag: move the tag onto the fix (and force-push it) or cut a new patch version.
+
+### If the GitLab release job fails
+
+`create-release` is the only job whose failure is not our own code's fault. It shells out to
+`glab`, so the job needs an image that contains it — a plain `python` image fails with:
+
+```
+Warning: release-cli will not be supported after 20.0. Please use glab >= 1.58.0
+/usr/bin/bash: line 211: release-cli: command not found
+ERROR: Job failed: exit code 127
+```
+
+The release itself being created is what makes the version appear in the CI/CD Catalog.
+GitLab only counts releases created by the `release` keyword; a release created through the
+Releases API or the UI does **not** publish to the catalog. The catalog also only indexes a
+project after the toggle above is on, so enabling it after a release has been published may
+need one more release before the project is listed.
 
 ## Reporting security issues
 

@@ -10,6 +10,12 @@ and the flow can read both during a migration.
 
 ## [Unreleased]
 
+### Removed
+
+- PyPI publishing. The container image (GHCR and the GitLab registry) and the GitLab CI/CD
+  component are the two supported ways to consume this; there is no longer anything to
+  install from an index, and no trusted-publisher configuration to get wrong.
+
 ## [0.1.0] - 2026-09-20
 
 First release: the engine, both jobs, the rollout tooling and the drift report.
