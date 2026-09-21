@@ -10,6 +10,11 @@ and the flow can read both during a migration.
 
 ## [Unreleased]
 
+### Fixed
+
+- The GitLab release job recreates a release that already exists instead of failing, so
+  re-running a tag pipeline (after moving a tag onto a fix, for instance) is safe.
+
 ### Removed
 
 - PyPI publishing. The container image (GHCR and the GitLab registry) and the GitLab CI/CD

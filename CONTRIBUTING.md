@@ -106,6 +106,12 @@ Releases API or the UI does **not** publish to the catalog. The catalog also onl
 project after the toggle above is on, so enabling it after a release has been published may
 need one more release before the project is listed.
 
+The `release` keyword never *updates* an existing release, it fails with `Release for tag
+"x" already exists`. Because a tag pipeline reads its configuration at the tag, any re-run of
+a tag pipeline hits that — which is what happens whenever a tag is moved onto a fix. The job
+therefore recreates the release itself (`glab release delete` in `before_script`, then the
+keyword creates it again), so re-running a tag pipeline is safe.
+
 ## Reporting security issues
 
 Please do not open a public issue; see [`SECURITY.md`](SECURITY.md).
