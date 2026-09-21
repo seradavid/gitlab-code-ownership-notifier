@@ -1,8 +1,16 @@
 # ownership-bot
 
 [![CI](https://github.com/seradavid/gitlab-code-ownership-notifier/actions/workflows/ci.yml/badge.svg)](https://github.com/seradavid/gitlab-code-ownership-notifier/actions/workflows/ci.yml)
+[![GitLab pipeline](https://gitlab.com/seradavid/gitlab-code-ownership-notifier/badges/master/pipeline.svg)](https://gitlab.com/seradavid/gitlab-code-ownership-notifier/-/pipelines)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+
+> **Two hosts, on purpose.** The engine, tests and issue tracker are on
+> [GitHub](https://github.com/seradavid/gitlab-code-ownership-notifier). The component is
+> published from a copy on [GitLab](https://gitlab.com/seradavid/gitlab-code-ownership-notifier),
+> because `include: component` can only reference a component hosted on the same GitLab
+> instance — a GitLab.com component therefore needs mirroring or a local copy to be used on
+> a self-managed instance.
 
 Notifies the team that owns the code in a GitLab merge request — **exactly twice** in a
 change's life — using the CODEOWNERS files you already have and the dashboard labels your
@@ -42,10 +50,10 @@ Three things, all of them reviewable in a single merge request:
 ```yaml
 # .gitlab-ci.yml
 include:
-  - component: gitlab.example.com/devops/ownership-notify@1.0.0
+  - component: gitlab.com/seradavid/gitlab-code-ownership-notifier/ownership-notify@0.1.0
     inputs:
-      manifest-project: devops/ownership   # the repository holding teams.yml
-      mode: report                         # observe for a week before notifying
+      manifest-project: your-org/ownership    # the repository holding teams.yml
+      mode: report                            # observe for a week before notifying
 ```
 
 ```

@@ -27,7 +27,10 @@ spec:
   inputs:
     image:
       description: "Image containing the ownership-bot CLI."
-      default: "registry.example.com/ownership-notify/bot:1.0.0"
+      # Built and pushed by this project's own pipeline as `:<tag>`, so pinning the component
+      # version pins the engine with it. Bump this alongside each release (CONTRIBUTING.md);
+      # consumers can always override it with their own registry.
+      default: "registry.gitlab.com/seradavid/gitlab-code-ownership-notifier:0.1.0"
     mode:
       description: "report | label | notify. Use `report` while rolling out (§12 phase 2)."
       default: "notify"

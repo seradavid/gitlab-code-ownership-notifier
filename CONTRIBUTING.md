@@ -64,6 +64,28 @@ Small commits with a clear message. In the pull request description, say what th
 and which part of the design it touches. If it changes behaviour, update `docs/design.md` in
 the same pull request — the code references its section numbers.
 
+## Releasing
+
+The project is published from two hosts, and the tag conventions differ:
+
+| Host | Tag | What runs |
+| --- | --- | --- |
+| GitLab | `0.1.0` | `verify-release` re-runs the tests, `build-image` pushes the engine image as `:<tag>`, `create-release` publishes the version to the CI/CD Catalog |
+| GitHub | `v0.1.0` | builds the sdist and wheel, then publishes to PyPI and the image to GHCR |
+
+GitLab asks for a semantic version on component releases, so the plain `0.1.0` form is the
+safe one there; the GitHub workflow expects the `v` prefix. Push the same commit to both:
+
+```bash
+git push origin master && git push gitlab master
+```
+
+Before tagging on GitLab, bump the component's `image` input default in
+`templates/ownership-notify/template.yml` to the tag you are about to push, so the component
+and the engine image are pinned to the same version. Publishing to the CI/CD Catalog also
+needs a one-time toggle in the project (Settings → General → Visibility → CI/CD Catalog
+project) and a project description.
+
 ## Reporting security issues
 
 Please do not open a public issue; see [`SECURITY.md`](SECURITY.md).

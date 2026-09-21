@@ -9,6 +9,7 @@ stages:
   - build
   - drift
   - release
+  - publish
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
@@ -104,8 +105,9 @@ drift-report:
 
 # ------------------------------------------------------------------ release
 
-# A component is released by pushing a semver tag that contains this template.
-release:
+# A component version is a semver tag. `verify-release` re-runs the full suite against the
+# tagged commit, so a published version can never point at something untested.
+verify-release:
   stage: release
   image: python:3.11-slim
   rules:
@@ -113,5 +115,21 @@ release:
   script:
     - python -m pip install -e ".[dev]"
     - python -m pytest
-    - echo "Released component"
-    - echo "include: component $CI_SERVER_FQDN/$CI_PROJECT_PATH/ownership-notify@$CI_COMMIT_TAG"
+    - python scripts/check_component.py templates/ownership-notify/template.yml
+    - echo "Consumers reference it as:"
+    - echo "  include: component $CI_SERVER_FQDN/$CI_PROJECT_PATH/ownership-notify@$CI_COMMIT_TAG"
+
+# Publishing a release is what puts the version in the CI/CD Catalog, and GitLab only
+# counts releases created by a job's `release` keyword — the Releases API does not work
+# for this. The project also has to be toggled on as a catalog project (Settings >
+# General > Visibility), which is a one-time manual step.
+create-release:
+  stage: publish
+  image: python:3.11-slim
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+$/'
+  script:
+    - echo "Publishing $CI_COMMIT_TAG to the CI/CD Catalog"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    description: "ownership-notify $CI_COMMIT_TAG — see CHANGELOG.md for what changed."
