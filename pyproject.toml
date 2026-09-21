@@ -69,5 +69,5 @@ extend-exclude = ["drafts"]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["ownership_bot"]
+known-first-party = ["ownership_bot", "scripts"]
 

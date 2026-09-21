@@ -49,10 +49,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install pyyaml
-      # Catches the failure mode that breaks every consumer at include time:
-      # an input referenced by a job but never declared under `spec.inputs`.
-      - name: Lint the component template
-        run: python scripts/check_component.py templates/ownership-notify/template.yml
+      # Catches the failure mode that breaks every consumer at include time: an input
+      # referenced by a job but never declared under `spec.inputs`. It also validates
+      # that every `script:`/`run:` entry is a string — GitLab rejects the whole pipeline
+      # if a step parses as a mapping instead (an unquoted scalar containing ": ").
+      - name: Lint the CI configuration
+        run: >
+          python scripts/check_component.py
+          templates/ownership-notify/template.yml
+          .gitlab-ci.yml
+          .github/workflows/ci.yml
+          .github/workflows/release.yml
 
   offline:
     name: offline end-to-end

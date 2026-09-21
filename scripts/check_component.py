@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Validate a CI/CD component template before it is published.
+"""Validate the CI configuration before it is published.
 
-Runs in this repository's pipeline (`.gitlab-ci.yml`, `lint-component`) and can be
-run locally:
+Runs in both pipelines (`.github/workflows/ci.yml`, `.gitlab-ci.yml`) and locally:
 
-    python scripts/check_component.py templates/ownership-notify/template.yml
+    python scripts/check_component.py                 # every CI file in the repo
+    python scripts/check_component.py .gitlab-ci.yml   # just one
 
 Checks, in order of how much pain they save:
-  * the file is valid YAML (``yaml.safe_load_all`` sees exactly one document
-    after the ``---`` separator that starts the job definitions);
-  * every ``$[[ inputs.x ]]`` reference is declared under ``spec.inputs``
-    (a typo there fails at *include* time in every consumer's pipeline);
-  * both jobs are non-blocking (``allow_failure: true``) — the whole feature is
-    built on "never break a build" (§11);
-  * neither job is missing a ``script``.
+  * every shell step (``script:``, ``before_script:``, ``after_script:``, ``run:``) is a
+    string or a nested list of strings. An unquoted YAML scalar containing ``": "``
+    parses as a mapping instead, and GitLab then rejects the entire pipeline with
+    "script config should be a string or a nested array of strings";
+  * the file is valid YAML;
+  * for the component template: every ``$[[ inputs.x ]]`` reference is declared under
+    ``spec.inputs`` (a typo there fails at *include* time in every consumer's pipeline);
+  * both component jobs are non-blocking (``allow_failure: true``) — the whole feature
+    is built on "never break a build" (docs/design.md §11);
+  * neither component job is missing a ``script``.
 """
 
 from __future__ import annotations
@@ -28,6 +31,63 @@ INPUT_REFERENCE = re.compile(r"\$\{\{\s*inputs\.([A-Za-z0-9_\-]+)\s*\}\}")
 
 #: Jobs this component is expected to publish, and the reason each must not block.
 REQUIRED_JOBS = ("ownership-mr-check", "ownership-merge-audit")
+
+#: Keys whose value is a shell command (GitLab) or a shell block (GitHub Actions).
+SHELL_KEYS = ("script", "before_script", "after_script", "run")
+
+#: The CI files this repository ships, checked when no arguments are given.
+DEFAULT_TARGETS = (
+    "templates/ownership-notify/template.yml",
+    ".gitlab-ci.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+)
+
+
+def _load(text: str) -> list:
+    """Parse every YAML document; raises ``yaml.YAMLError`` on invalid syntax."""
+    return [document for document in yaml.safe_load_all(text) if document]
+
+
+def _check_shell_value(location: str, value) -> list[str]:  # noqa: ANN001
+    """A shell step must be a string, or a (nested) list of strings."""
+    if isinstance(value, str):
+        return []
+    if isinstance(value, list):
+        problems: list[str] = []
+        for index, item in enumerate(value):
+            problems.extend(_check_shell_value(f"{location}[{index}]", item))
+        return problems
+    return [
+        f"{location} is a {type(value).__name__}, not a string: an unquoted scalar "
+        "containing ': ' parses as a mapping — quote the whole line",
+    ]
+
+
+def _walk_shell_steps(node, location: str, problems: list[str]) -> None:  # noqa: ANN001
+    if isinstance(node, dict):
+        for key, value in node.items():
+            here = f"{location}.{key}" if location else str(key)
+            if key in SHELL_KEYS:
+                problems.extend(_check_shell_value(here, value))
+            else:
+                _walk_shell_steps(value, here, problems)
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            _walk_shell_steps(item, f"{location}[{index}]", problems)
+
+
+def check_pipeline(text: str) -> list[str]:
+    """Validate the shell steps of any GitLab or GitHub CI file."""
+    try:
+        documents = _load(text)
+    except yaml.YAMLError as exc:
+        return [f"invalid YAML: {exc}"]
+
+    problems: list[str] = []
+    for document in documents:
+        _walk_shell_steps(document, "", problems)
+    return problems
 
 
 def _check_inputs(header: dict) -> tuple[list[str], set[str]]:
@@ -77,11 +137,15 @@ def _check_job(name: str, body: object) -> list[str]:
     return problems
 
 
-def check(text: str) -> list[str]:
+def check_component(text: str) -> list[str]:
+    """Validate a CI/CD component template; a file without ``spec:`` is not one."""
     try:
-        documents = [doc for doc in yaml.safe_load_all(text) if doc]
+        documents = _load(text)
     except yaml.YAMLError as exc:
         return [f"invalid YAML: {exc}"]
+
+    if not documents or not isinstance(documents[0], dict) or "spec" not in documents[0]:
+        return []  # a pipeline, not a component: check_pipeline covers it
 
     if len(documents) != 2:
         return [f"expected 2 YAML documents (header + jobs), found {len(documents)}"]
@@ -103,11 +167,17 @@ def check(text: str) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    paths = [Path(arg) for arg in argv[1:]] or [Path("templates/ownership-notify/template.yml")]
+    paths = [Path(arg) for arg in argv[1:]] or [Path(target) for target in DEFAULT_TARGETS]
 
     failed = False
     for path in paths:
-        problems = check(path.read_text(encoding="utf-8"))
+        if not path.is_file():
+            failed = True
+            print(f"{path}: missing")
+            continue
+
+        text = path.read_text(encoding="utf-8")
+        problems = check_pipeline(text) + check_component(text)
         if problems:
             failed = True
             print(f"{path}: {len(problems)} problem(s)")

@@ -47,7 +47,7 @@ lint-component:
   image: python:3.11-slim
   script:
     - python -m pip install pyyaml
-    - python scripts/check_component.py templates/ownership-notify/template.yml
+    - python scripts/check_component.py templates/ownership-notify/template.yml .gitlab-ci.yml .github/workflows/ci.yml .github/workflows/release.yml
 
 # Offline smoke test of the decision engine, no GitLab access needed.
 smoke:
@@ -115,9 +115,11 @@ verify-release:
   script:
     - python -m pip install -e ".[dev]"
     - python -m pytest
-    - python scripts/check_component.py templates/ownership-notify/template.yml
-    - echo "Consumers reference it as:"
-    - echo "  include: component $CI_SERVER_FQDN/$CI_PROJECT_PATH/ownership-notify@$CI_COMMIT_TAG"
+    - python scripts/check_component.py templates/ownership-notify/template.yml .gitlab-ci.yml
+    # Whole-line quoting is required: an unquoted scalar containing ": " parses as a
+    # mapping and GitLab rejects the job with "script config should be a string".
+    - 'echo "Consumers reference it as:"'
+    - 'echo "  include: component $CI_SERVER_FQDN/$CI_PROJECT_PATH/ownership-notify@$CI_COMMIT_TAG"'
 
 # Publishing a release is what puts the version in the CI/CD Catalog, and GitLab only
 # counts releases created by a job's `release` keyword — the Releases API does not work
