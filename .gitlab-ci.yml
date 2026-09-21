@@ -123,11 +123,13 @@ verify-release:
 
 # Publishing a release is what puts the version in the CI/CD Catalog, and GitLab only
 # counts releases created by a job's `release` keyword — the Releases API does not work
-# for this. The project also has to be toggled on as a catalog project (Settings >
+# for this. The job needs an image that ships `glab` (or the legacy `release-cli`): the
+# keyword shells out to it, and a plain python image fails with "release-cli: command
+# not found". The project also has to be toggled on as a catalog project (Settings >
 # General > Visibility), which is a one-time manual step.
 create-release:
   stage: publish
-  image: python:3.11-slim
+  image: registry.gitlab.com/gitlab-org/cli:latest
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+$/'
   script:
