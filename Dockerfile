@@ -4,7 +4,7 @@
 # Power Automate flow over HTTP, so Git and a checkout are not required
 # (`GIT_STRATEGY: none` in the component).
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
