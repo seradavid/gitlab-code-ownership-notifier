@@ -10,6 +10,8 @@ and the flow can read both during a migration.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-02
+
 ### Fixed
 
 - **Ownership-change alerts now fire in real pipelines.** `ownership_changed` was only ever
@@ -134,5 +136,7 @@ First release: the engine, both jobs, the rollout tooling and the drift report.
 - 105 unit tests with no network access, an offline end-to-end demo, and a component lint
   script.
 
-[Unreleased]: https://github.com/seradavid/gitlab-code-ownership-notifier/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/seradavid/gitlab-code-ownership-notifier/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/seradavid/gitlab-code-ownership-notifier/releases/tag/v0.3.0
+[0.2.0]: https://github.com/seradavid/gitlab-code-ownership-notifier/releases/tag/v0.2.0
 [0.1.0]: https://github.com/seradavid/gitlab-code-ownership-notifier/releases/tag/v0.1.0
