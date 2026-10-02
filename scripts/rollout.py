@@ -65,9 +65,7 @@ then switch to `notify` — see §12 of the design document.
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--mapping", required=True, help="mapping.yml: repository -> intent")
     parser.add_argument("--teams-file", help="teams.yml, to validate owner tokens")
     parser.add_argument(
@@ -83,7 +81,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def _plan_codeowners(
-    client: GitLab, draft, ref: str, *, force_codeowners: bool  # noqa: ANN001
+    client: GitLab,
+    draft,
+    ref: str,
+    *,
+    force_codeowners: bool,  # noqa: ANN001
 ) -> tuple[list[dict], list[str]]:
     path = draft.codeowners_path
     existing = client.raw_file(draft.project, path, ref)
@@ -100,13 +102,14 @@ def _plan_codeowners(
     if existing.strip() == text.strip():
         return [], [f"{path} already matches the draft"]
 
-    raise RolloutError(
-        f"{path} already exists; rerun with --force-codeowners once it is reviewed"
-    )
+    raise RolloutError(f"{path} already exists; rerun with --force-codeowners once it is reviewed")
 
 
 def _plan_ci(
-    client: GitLab, draft, component: str, ref: str  # noqa: ANN001
+    client: GitLab,
+    draft,
+    component: str,
+    ref: str,  # noqa: ANN001
 ) -> tuple[list[dict], list[str]]:
     path = ".gitlab-ci.yml"
     current = client.raw_file(draft.project, path, ref) or ""
@@ -131,15 +134,17 @@ def plan_for_repo(
     force_codeowners: bool,
 ) -> tuple[list[dict], list[str]]:
     """Return ``(commit actions, notes)``; raises :class:`RolloutError` to skip a repo."""
-    codeowners_actions, codeowners_notes = _plan_codeowners(
-        client, draft, ref, force_codeowners=force_codeowners
-    )
+    codeowners_actions, codeowners_notes = _plan_codeowners(client, draft, ref, force_codeowners=force_codeowners)
     ci_actions, ci_notes = _plan_ci(client, draft, component, ref)
     return codeowners_actions + ci_actions, codeowners_notes + ci_notes
 
 
 def _plan_repo(
-    client: GitLab, project: str, draft, args: argparse.Namespace, known: set[str]  # noqa: ANN001
+    client: GitLab,
+    project: str,
+    draft,
+    args: argparse.Namespace,
+    known: set[str],  # noqa: ANN001
 ) -> tuple[list[dict], list[str], str]:
     """Read the repository and plan its merge request; never writes anything."""
     info = client.project(project)
@@ -149,15 +154,11 @@ def _plan_repo(
     if problems:
         raise RolloutError("draft problems: " + "; ".join(problems))
 
-    actions, notes = plan_for_repo(
-        client, draft, args.component, ref, force_codeowners=args.force_codeowners
-    )
+    actions, notes = plan_for_repo(client, draft, args.component, ref, force_codeowners=args.force_codeowners)
     return actions, notes, ref
 
 
-def _apply(
-    client: GitLab, project: str, args: argparse.Namespace, ref: str, actions: list[dict]
-) -> dict:
+def _apply(client: GitLab, project: str, args: argparse.Namespace, ref: str, actions: list[dict]) -> dict:
     client.create_commit(
         project,
         args.branch,
@@ -175,7 +176,11 @@ def _apply(
 
 
 def _process_repo(
-    client: GitLab, project: str, draft, args: argparse.Namespace, known: set[str]  # noqa: ANN001
+    client: GitLab,
+    project: str,
+    draft,
+    args: argparse.Namespace,
+    known: set[str],  # noqa: ANN001
 ) -> str | None:
     """Plan (and optionally apply) one repository; returns the MR summary line."""
     actions, notes, ref = _plan_repo(client, project, draft, args, known)
@@ -225,7 +230,7 @@ def main(argv: list[str]) -> int:
     if args.teams_file:
         try:
             manifest = load_manifest(args.teams_file)
-        except (ManifestError, OSError):
+        except ManifestError, OSError:
             log.exception("cannot read %s", args.teams_file)
             return 2
         known = set(manifest.token_to_team) | {

@@ -31,17 +31,13 @@ def test_codeowners_pattern_and_files_are_reported(manifest, codeowners):
 
 
 def test_repo_default_owner_covers_unknown_paths(manifest, codeowners):
-    result = resolve_ownership(
-        changed_files=["tools/scripts/run.sh"], manifest=manifest, codeowners=codeowners
-    )
+    result = resolve_ownership(changed_files=["tools/scripts/run.sh"], manifest=manifest, codeowners=codeowners)
     assert result.teams() == {"platform"}
     assert result.files_unclaimed == 0
 
 
 def test_unclaimed_when_no_pattern_matches(manifest):
-    result = resolve_ownership(
-        changed_files=["src/a.ts"], manifest=manifest, codeowners=parse("lib/** @x")
-    )
+    result = resolve_ownership(changed_files=["src/a.ts"], manifest=manifest, codeowners=parse("lib/** @x"))
     assert result.files_unclaimed == 1
     assert result.teams() == set()
 
@@ -79,9 +75,7 @@ def test_module_overlay_does_not_apply_when_identity_differs(manifest, codeowner
         codeowners=codeowners,
         identity_for=lambda path: "com.acme:other",
     )
-    assert all(
-        match.kind == "codeowners" for matches in result.matches.values() for match in matches
-    )
+    assert all(match.kind == "codeowners" for matches in result.matches.values() for match in matches)
 
 
 def test_unknown_tokens_are_reported(manifest):

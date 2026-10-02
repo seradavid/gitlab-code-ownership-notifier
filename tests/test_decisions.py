@@ -78,15 +78,13 @@ def test_team_label_present_suppresses(manifest):
 
 
 def test_skip_label_suppresses_everything(manifest):
-    decisions = decide(
-        make_mr(labels=("ownership-bot::skip",)), manifest, ownership("payments")
-    )
+    decisions = decide(make_mr(labels=("ownership-bot::skip",)), manifest, ownership("payments"))
     assert decisions == []
 
 
 def test_author_is_skipped(manifest):
     """The author's own team is never pinged (D3)."""
-    rosters = lambda key: ({"dave"} if key == "payments" else set())  # noqa: E731
+    rosters = lambda key: {"dave"} if key == "payments" else set()  # noqa: E731
     decisions = decide(make_mr(author="dave"), manifest, ownership("payments"), rosters=rosters)
     assert decisions == []
 
@@ -168,9 +166,7 @@ def test_notify_on_can_exclude_the_green_pipeline(manifest):
 
 def test_ownership_change_notifies_team_that_loses_patterns(manifest):
     token_to_team = manifest.token_to_team
-    delta = team_pattern_delta(
-        parse("a/** @acme/teams/devops"), parse("a/** @acme/teams/platform"), token_to_team
-    )
+    delta = team_pattern_delta(parse("a/** @acme/teams/devops"), parse("a/** @acme/teams/platform"), token_to_team)
     decisions = decide(make_mr(target_branch="master"), manifest, ownership(), delta=delta)
 
     losing = next(d for d in decisions if d.team == "devops")
@@ -202,10 +198,8 @@ def test_both_reasons_are_combined_into_one_message(manifest):
 
 
 def test_ownership_change_respects_author_skip(manifest):
-    delta = team_pattern_delta(
-        parse("a/** @acme/teams/payments"), parse(""), manifest.token_to_team
-    )
-    rosters = lambda key: ({"dave"} if key == "payments" else set())  # noqa: E731
+    delta = team_pattern_delta(parse("a/** @acme/teams/payments"), parse(""), manifest.token_to_team)
+    rosters = lambda key: {"dave"} if key == "payments" else set()  # noqa: E731
     assert decide(make_mr(author="dave"), manifest, ownership(), delta=delta, rosters=rosters) == []
 
 
@@ -248,5 +242,5 @@ def test_audit_ignores_thresholds(manifest):
 
 
 def test_audit_skips_the_authors_own_team(manifest):
-    rosters = lambda key: ({"dave"} if key == "payments" else set())  # noqa: E731
+    rosters = lambda key: {"dave"} if key == "payments" else set()  # noqa: E731
     assert audit(make_mr(state="merged", author="dave"), manifest, ownership("payments"), rosters=rosters) == []

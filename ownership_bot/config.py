@@ -72,8 +72,7 @@ def from_env(overrides: dict | None = None) -> Settings:
     overrides = {k: v for k, v in (overrides or {}).items() if v is not None}
 
     settings = Settings(
-        gitlab_url=_first("OWNERSHIP_GITLAB_URL", "CI_SERVER_URL", "GITLAB_URL")
-        or "https://gitlab.example.com",
+        gitlab_url=_first("OWNERSHIP_GITLAB_URL", "CI_SERVER_URL", "GITLAB_URL") or "https://gitlab.example.com",
         bot_token=_first("OWNERSHIP_BOT_TOKEN", "GITLAB_TOKEN", "BOT_TOKEN"),
         project_id=_first("CI_PROJECT_ID"),
         project_path=_first("CI_PROJECT_PATH", "CI_MERGE_REQUEST_PROJECT_PATH"),
@@ -83,17 +82,14 @@ def from_env(overrides: dict | None = None) -> Settings:
         pipeline_source=_first("CI_PIPELINE_SOURCE"),
         commit_sha=_first("CI_MERGE_REQUEST_SHA", "CI_COMMIT_SHA"),
         merge_request_iid=_first("CI_MERGE_REQUEST_IID"),
-        target_branch=_first(
-            "CI_MERGE_REQUEST_TARGET_BRANCH_NAME", "CI_COMMIT_BRANCH", "CI_COMMIT_REF_NAME"
-        ),
+        target_branch=_first("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", "CI_COMMIT_BRANCH", "CI_COMMIT_REF_NAME"),
         diff_base_sha=_first("CI_MERGE_REQUEST_DIFF_BASE_SHA"),
         manifest_project=_first("OWNERSHIP_MANIFEST_PROJECT"),
         manifest_ref=_first("OWNERSHIP_MANIFEST_REF") or "main",
         manifest_file=_first("OWNERSHIP_MANIFEST_FILE") or "teams.yml",
         manifest_path=_first("OWNERSHIP_MANIFEST_PATH"),
         mode=_first("OWNERSHIP_MODE") or MODE_NOTIFY,
-        verify_upstream=(_first("OWNERSHIP_VERIFY_UPSTREAM") or "true").lower()
-        not in ("false", "0", "no"),
+        verify_upstream=(_first("OWNERSHIP_VERIFY_UPSTREAM") or "true").lower() not in ("false", "0", "no"),
         repo_root=Path(_first("CI_PROJECT_DIR") or Path.cwd()),
         codeowners_path=_first("OWNERSHIP_CODEOWNERS_PATH"),
         decision_artifact=_first("OWNERSHIP_DECISION_ARTIFACT") or "decision.json",

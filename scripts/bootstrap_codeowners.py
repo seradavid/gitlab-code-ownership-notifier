@@ -120,9 +120,7 @@ def scan(
         for prefix in uncovered:
             suggestions.extend(
                 f"{prefix}: {line}"
-                for line in suggest_owners(
-                    client, draft.project, prefix, ref, rosters, history_limit
-                )
+                for line in suggest_owners(client, draft.project, prefix, ref, rosters, history_limit)
             )
     return text, problems, uncovered, suggestions
 
@@ -144,7 +142,7 @@ def teams_skeleton(mapping: dict[str, RepoDraft], known: set[str]) -> str:
         key = token.lstrip("@").rsplit("/", 1)[-1].replace(".", "-")
         lines += [
             f"  {key}:",
-            f"    codeowners_token: \"{token}\"",
+            f'    codeowners_token: "{token}"',
             "    gitlab_group: TODO            # or members: [TODO]",
             f"    teams_channel: TODO           # first seen in {project}",
             f"    label: team::{key}",
@@ -244,8 +242,7 @@ def _scan_all(
     if args.group:
         _warn_about_group(client, args.group, mapping)
     return {
-        project: _scan_one(client, project, draft, args, known, manifest)
-        for project, draft in sorted(mapping.items())
+        project: _scan_one(client, project, draft, args, known, manifest) for project, draft in sorted(mapping.items())
     }
 
 
@@ -275,7 +272,7 @@ def main(argv: list[str]) -> int:
     if args.teams_file:
         try:
             manifest = load_manifest(args.teams_file)
-        except (ManifestError, OSError):
+        except ManifestError, OSError:
             log.exception("cannot read %s", args.teams_file)
             return 2
 
