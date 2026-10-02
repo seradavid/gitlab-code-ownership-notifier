@@ -8,17 +8,25 @@ Because the notification payload is consumed by a Power Automate flow you contro
 payload's `schema` field is the compatibility contract: it changes only in a major release,
 and the flow can read both during a migration.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-02
 
 ### Changed
 
 - The runtime floor is now Python 3.14. The engine image, the CI matrix and the project
   metadata all target 3.14 (was 3.11–3.13).
+- The package version now comes from a single source (`ownership_bot.__version__`) via
+  setuptools' dynamic version, instead of being duplicated in `pyproject.toml`.
+- The runner, drift and notifier depend on narrow `Protocol` interfaces rather than the
+  concrete GitLab client, which keeps them testable with stubs.
 
 ### Fixed
 
 - The GitLab release job recreates a release that already exists instead of failing, so
   re-running a tag pipeline (after moving a tag onto a fix, for instance) is safe.
+- The notification payload's `owners_approved` now credits approvers from the team's full
+  roster (GitLab group members and same-line `@user`s), not only the explicit `members`.
+- `teams.yml` now rejects an unknown `version` and reports a clear error for non-integer
+  `min_mr_age_minutes` / `min_owned_files` instead of a raw `ValueError`.
 
 ### Removed
 
@@ -32,6 +40,9 @@ and the flow can read both during a migration.
   (CVE-2024-35195, CVE-2024-47081, CVE-2026-25645), `pytest` to `>=9.0.3` (CVE-2025-71176)
   and `setuptools` to `>=83.0.0` (CVE-2025-47273, CVE-2026-59890). `PyYAML` (`>=6.0.3`) and
   `ruff` (`>=0.6`) already pin clean versions.
+- The GitLab client no longer follows redirects, so the `PRIVATE-TOKEN` header cannot leak to
+  a different host, and the HTTP `User-Agent` is now actually set (it previously fell back to
+  `python-requests`).
 
 ## [0.1.0] - 2026-09-20
 

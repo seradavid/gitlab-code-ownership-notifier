@@ -22,16 +22,6 @@ class ManifestError(ValueError):
     """Raised when ``teams.yml`` is structurally unusable."""
 
 
-_OVERRIDABLE = (
-    "branches",
-    "exclude_branches",
-    "notify_on",
-    "min_mr_age_minutes",
-    "min_owned_files",
-    "mentions",
-)
-
-
 @dataclass(frozen=True)
 class Team:
     key: str
@@ -184,6 +174,15 @@ def _as_tuple(value, name: str, team_key: str) -> tuple:
     raise ManifestError(f"team '{team_key}': '{name}' must be a list")
 
 
+def _as_int(value, name: str, team_key: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ManifestError(
+            f"team '{team_key}': '{name}' must be an integer, got {value!r}"
+        ) from None
+
+
 def _team_problems(key: str, team: Team) -> list[str]:
     problems: list[str] = []
 
@@ -250,10 +249,16 @@ def _team_from(key: str, raw: dict, defaults: dict) -> Team:
             key,
         ),
         notify_on=frozenset(notify_on or ALL_EVENTS),
-        min_mr_age_minutes=int(
-            pick("min_mr_age_minutes", defaults.get("min_mr_age_minutes", 0)) or 0
+        min_mr_age_minutes=_as_int(
+            pick("min_mr_age_minutes", defaults.get("min_mr_age_minutes", 0)) or 0,
+            "min_mr_age_minutes",
+            key,
         ),
-        min_owned_files=int(pick("min_owned_files", defaults.get("min_owned_files", 1)) or 0),
+        min_owned_files=_as_int(
+            pick("min_owned_files", defaults.get("min_owned_files", 1)) or 0,
+            "min_owned_files",
+            key,
+        ),
         mentions=_as_tuple(pick("mentions", defaults.get("mentions", [])), "mentions", key),
     )
 
@@ -282,6 +287,12 @@ def load_manifest_text(text: str, *, source: str = "teams.yml") -> Manifest:
     data = yaml.safe_load(text) or {}
     if not isinstance(data, dict):
         raise ManifestError(f"{source}: top level must be a mapping")
+
+    # The manifest schema is versioned; only `1` exists today. A future version must be
+    # rejected rather than silently mis-read.
+    version = data.get("version")
+    if version is not None and version != 1:
+        raise ManifestError(f"{source}: unsupported 'version' {version!r} (expected 1)")
 
     defaults = data.get("defaults") or {}
     if not isinstance(defaults, dict):

@@ -28,7 +28,6 @@ class MergeRequest:
     target_branch: str
     created_at: datetime
     labels: frozenset[str] = frozenset()
-    sha: str | None = None
     merged_at: datetime | None = None
 
     @property

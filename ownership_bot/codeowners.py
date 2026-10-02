@@ -144,9 +144,6 @@ class ParsedCodeowners:
     def is_empty(self) -> bool:
         return not self.rules
 
-    def all_patterns(self) -> list[str]:
-        return [rule.pattern for rule in self.rules]
-
 
 def _strip_comment(line: str) -> str:
     """Drop a trailing ``#`` comment (a leading one is a whole-line comment)."""
@@ -206,8 +203,9 @@ def parse(text: str) -> ParsedCodeowners:
 
         section_match = _SECTION_RE.match(line)
         if section_match:
-            section = section_match.group("name").strip()
-            parsed.sections.append(section)
+            name: str = section_match.group("name").strip()
+            section = name
+            parsed.sections.append(name)
             continue
 
         line = _strip_comment(line)

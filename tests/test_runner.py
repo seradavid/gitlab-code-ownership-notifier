@@ -50,6 +50,17 @@ class StubClient:
     def pipeline_jobs(self, project, pipeline_id):  # noqa: ANN001
         return list(self.jobs)
 
+    # Structural only: these satisfy RunnerClient/ManifestReader but are never called,
+    # because the tests feed local files rather than the fake network methods.
+    def raw_file(self, project, path, ref):  # noqa: ANN001
+        return None
+
+    def codeowners(self, project, ref):  # noqa: ANN001
+        return None, "CODEOWNERS"
+
+    def merge_request_diffs(self, project, iid):  # noqa: ANN001
+        return [], False
+
     # runner calls client.notes(...) to read the merge-audit markers
     def notes(self, project, iid):  # noqa: ANN001
         return [{"body": body} for body in self.note_bodies]

@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from urllib.parse import quote
 
 import requests
 
+from . import __version__
 from .codeowners import CODEOWNERS_PATHS
 from .models import MergeRequest
 
@@ -37,7 +39,7 @@ class GitLab:
     def __post_init__(self) -> None:
         if self.token:
             self.session.headers["PRIVATE-TOKEN"] = self.token
-        self.session.headers.setdefault("User-Agent", "ownership-bot/0.1")
+        self.session.headers["User-Agent"] = f"ownership-bot/{__version__}"
 
     @classmethod
     def from_env(cls, overrides: dict | None = None) -> GitLab | None:
@@ -55,10 +57,16 @@ class GitLab:
 
     # ------------------------------------------------------------------ plumbing
 
-    def _request(self, method: str, path: str, *, params=None, body=None, expect=(200, 201)):
+    def _request(
+        self, method: str, path: str, *, params=None, body=None, expect=(200, 201)
+    ) -> Any:
         url = f"{self.base_url.rstrip('/')}/api/v4{path}"
+        # Never follow redirects: the session carries the PRIVATE-TOKEN header, and
+        # `requests` only strips `Authorization`/`Cookie` on a cross-host redirect, so a
+        # 3xx to another host would leak the token. The GitLab API does not redirect for
+        # these endpoints; a 3xx is reported as an error below instead.
         response = self.session.request(
-            method, url, params=params, json=body, timeout=self.timeout
+            method, url, params=params, json=body, timeout=self.timeout, allow_redirects=False
         )
         if response.status_code not in expect:
             raise GitLabError(
@@ -68,7 +76,7 @@ class GitLab:
             return None
         return response.json()
 
-    def get(self, path: str, params: dict | None = None):
+    def get(self, path: str, params: dict | None = None) -> Any:
         return self._request("GET", path, params=params)
 
     def paginate(self, path: str, params: dict | None = None):
@@ -112,6 +120,7 @@ class GitLab:
                 f"/repository/files/{quote(path, safe='')}/raw",
                 params={"ref": ref},
                 timeout=self.timeout,
+                allow_redirects=False,
             )
         except requests.RequestException as exc:
             raise GitLabError(f"reading {path}@{ref}: {exc}") from exc
@@ -311,7 +320,6 @@ def to_merge_request(data: dict, *, project_path: str = "") -> MergeRequest:
         target_branch=data.get("target_branch") or "",
         created_at=_parse(created) or datetime.now(),
         labels=frozenset(data.get("labels") or []),
-        sha=data.get("sha"),
         merged_at=_parse(merged),
     )
 

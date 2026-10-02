@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 
 from . import decisions, identity, notify, ownership
-from .codeowners import CODEOWNERS_PATHS, ParsedCodeowners, parse, team_pattern_delta
+from .codeowners import ParsedCodeowners, parse, team_pattern_delta
 from .config import MODE_REPORT, Settings
-from .gitlab import GitLab, GitLabError
+from .gitlab import GitLabError
 from .models import Approvals, MergeRequest, OwnershipResult
 from .ownership import users_on_team_lines
 from .teams import Manifest, load_manifest, load_manifest_text
@@ -27,13 +29,42 @@ log = logging.getLogger(__name__)
 MERGE_MARKER = "<!-- ownership-bot:merged:{team} -->"
 
 
+# --------------------------------------------------------------- client interfaces
+
+
+class ManifestReader(Protocol):
+    """The single endpoint :func:`load_manifest_for` needs."""
+
+    def raw_file(self, project: str | int, path: str, ref: str) -> str | None: ...
+
+
+class RunnerClient(Protocol):
+    """The GitLab operations the job runners use (a subset of :class:`GitLab`)."""
+
+    def codeowners(self, project: str | int, ref: str) -> tuple[str | None, str]: ...
+
+    def merge_request_diffs(self, project: str | int, iid: int) -> tuple[list[str], bool]: ...
+
+    def group_members(self, group: str) -> set[str]: ...
+
+    def approvals(self, project: str | int, iid: int) -> list[str]: ...
+
+    def notes(self, project: str | int, iid: int) -> list[dict]: ...
+
+    def add_labels(self, project: str | int, iid: int, labels: list[str]) -> None: ...
+
+    def add_note(self, project: str | int, iid: int, body: str) -> None: ...
+
+    def pipeline_jobs(self, project: str | int, pipeline_id: str | int) -> list[dict]: ...
+
+
 # --------------------------------------------------------------------------- context
 
 
 @dataclass
 class RunContext:
     settings: Settings
-    client: GitLab | None = None
+    client: RunnerClient | None = None
     manifest: Manifest | None = None
     now: datetime = field(default_factory=lambda: datetime.now(UTC))
     problems: list[str] = field(default_factory=list)
@@ -44,7 +75,7 @@ class RunContext:
         return self.manifest
 
 
-def load_manifest_for(settings: Settings, client: GitLab | None) -> Manifest:
+def load_manifest_for(settings: Settings, client: ManifestReader | None) -> Manifest:
     """Load ``teams.yml`` from a local file, or from another repository's API.
 
     The local file wins, which is what makes offline runs and dry runs possible. When
@@ -79,7 +110,7 @@ def load_manifest_for(settings: Settings, client: GitLab | None) -> Manifest:
 
 
 def fetch_codeowners(
-    settings: Settings, client: GitLab | None, project: str | int, ref: str
+    settings: Settings, client: RunnerClient | None, project: str | int, ref: str
 ) -> tuple[ParsedCodeowners, bool, str]:
     """Read CODEOWNERS from the MR's **target branch** (§7.1)."""
     if settings.codeowners_path:
@@ -99,7 +130,7 @@ def fetch_codeowners(
 
 
 def changed_files_for(
-    client: GitLab | None,
+    client: RunnerClient | None,
     *,
     project: str | int,
     iid: int,
@@ -120,8 +151,8 @@ def changed_files_for(
 def make_roster_lookup(
     manifest: Manifest,
     codeowners: ParsedCodeowners,
-    client: GitLab | None,
-) -> tuple[callable, set[str]]:
+    client: RunnerClient | None,
+) -> tuple[Callable[[str], set[str]], set[str]]:
     """Roster per team (§7.5) plus the set of teams whose roster could not be resolved."""
     cache: dict[str, set[str]] = {}
     unresolved: set[str] = set()
@@ -197,10 +228,6 @@ def resolve_for_mr(
     return result, delta, codeowners
 
 
-def mr_edits_codeowners(changed_files: list[str]) -> bool:
-    return any(path in CODEOWNERS_PATHS or path.endswith("CODEOWNERS") for path in changed_files)
-
-
 # ----------------------------------------------------------------------- job runners
 
 
@@ -251,6 +278,7 @@ def _dispatch_mr_check(
     ownership_result: OwnershipResult,
     approvals: Approvals,
     unresolved: set[str],
+    roster_for,
     notifier,
 ) -> tuple[list[dict], list[str]]:
     """Notify first, then label: a lost notification must leave the MR unlabelled (§11)."""
@@ -269,6 +297,7 @@ def _dispatch_mr_check(
             manifest=manifest,
             roster_resolved=decision.team not in unresolved,
             trigger=_pipeline_trigger(settings),
+            roster_for=roster_for,
         )
 
         delivered = _send_or_mark_report(settings, notifier, payload)
@@ -338,6 +367,7 @@ def run_mr_check(
         ownership_result=ownership_result,
         approvals=approvals,
         unresolved=unresolved,
+        roster_for=roster_for,
         notifier=notifier,
     )
 
@@ -385,6 +415,7 @@ def _dispatch_merge_audit(
     ownership_result: OwnershipResult,
     approvals: Approvals,
     unresolved: set[str],
+    roster_for,
     notifier,
 ) -> list[dict]:
     """One note per team per MR: the marker makes a re-run a no-op (§9.2)."""
@@ -405,6 +436,7 @@ def _dispatch_merge_audit(
             manifest=ctx.require_manifest(),
             roster_resolved=decision.team not in unresolved,
             trigger=_pipeline_trigger(settings),
+            roster_for=roster_for,
         )
 
         delivered = _send_or_mark_report(settings, notifier, payload)
@@ -468,6 +500,7 @@ def run_merge_audit(
         ownership_result=ownership_result,
         approvals=approvals,
         unresolved=unresolved,
+        roster_for=roster_for,
         notifier=notifier,
     )
 
@@ -516,7 +549,7 @@ def _notifier(settings: Settings):
     )
 
 
-def upstream_failed(settings: Settings, client: GitLab | None) -> bool:
+def upstream_failed(settings: Settings, client: RunnerClient | None) -> bool:
     """True when a job *before* ours failed and was not allowed to fail.
 
     This is what makes the "only notify when the pipeline passed" rule

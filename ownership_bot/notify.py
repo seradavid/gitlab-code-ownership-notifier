@@ -6,11 +6,14 @@ import hashlib
 import hmac
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any, Protocol
 
 import requests
 
+from . import __version__
 from .codeowners import CODEOWNERS_PATHS
 from .models import Approvals, Decision, MergeRequest, OwnershipResult
 from .teams import Manifest
@@ -18,6 +21,12 @@ from .teams import Manifest
 log = logging.getLogger(__name__)
 
 SCHEMA = 1
+
+
+class HttpSession(Protocol):
+    """The one method :class:`Notifier` needs; lets tests pass a stub session."""
+
+    def post(self, url: str, *, data: bytes, headers: dict[str, str], timeout: int) -> Any: ...
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -38,9 +47,11 @@ def build_payload(
     actions_taken: list[str] | None = None,
     roster_resolved: bool = True,
     trigger: dict | None = None,
+    roster_for: Callable[[str], set[str]] | None = None,
 ) -> dict:
     """Build the versioned payload consumed by the Power Automate flow."""
     team = manifest.team(decision.team)
+    roster = roster_for(decision.team) if roster_for is not None else manifest.roster(team)
 
     matched = [
         {"kind": match.kind, "value": match.value, "files": list(match.files)}
@@ -95,18 +106,12 @@ def build_payload(
         "approvals": {
             "approved_by": list(approvals.approved_by),
             "owners_approved": [
-                username
-                for username in approvals.approved_by
-                if username in _owner_names(manifest, decision.team)
+                username for username in approvals.approved_by if username in roster
             ],
             "checked_at": _iso(approvals.checked_at),
         },
         "actions_taken": list(actions_taken or []),
     }
-
-
-def _owner_names(manifest: Manifest, team_key: str) -> set[str]:
-    return set(manifest.team(team_key).members)
 
 
 def sign(body: bytes, secret: str) -> str:
@@ -122,7 +127,7 @@ class Notifier:
     workflow_url: str
     shared_secret: str = ""
     timeout: int = 15
-    session: requests.Session = field(default_factory=requests.Session)
+    session: HttpSession = field(default_factory=requests.Session)
 
     def post(self, payload: dict) -> bool:
         if not self.workflow_url:
@@ -130,7 +135,10 @@ class Notifier:
             return False
 
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": f"ownership-bot/{__version__}",
+        }
         if self.shared_secret:
             headers["X-Ownership-Signature"] = sign(body, self.shared_secret)
 

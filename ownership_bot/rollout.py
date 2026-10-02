@@ -108,9 +108,13 @@ def render_codeowners(draft: RepoDraft, *, header: str = _HEADER) -> str:
     lines: list[str] = [header.format(project=draft.project).rstrip(), ""]
 
     if draft.default_owner:
-        lines.append("# fallback owner for anything not listed below")
-        lines.append(f"* {draft.default_owner}")
-        lines.append("")
+        lines.extend(
+            [
+                "# fallback owner for anything not listed below",
+                f"* {draft.default_owner}",
+                "",
+            ]
+        )
 
     section = ""
     for pattern, owners in draft.rules.items():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Callable
 
 from .codeowners import ParsedCodeowners, Rule
 from .models import OwnershipMatch, OwnershipResult
@@ -92,7 +93,7 @@ def resolve_ownership(
     changed_files: list[str],
     manifest: Manifest,
     codeowners: ParsedCodeowners,
-    identity_for: callable | None = None,
+    identity_for: Callable[[str], str | None] | None = None,
     codeowners_ref: str = "",
     codeowners_found: bool = True,
     diffs_truncated: bool = False,

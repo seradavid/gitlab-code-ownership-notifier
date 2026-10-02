@@ -25,6 +25,36 @@ def test_missing_required_fields_are_rejected():
         load_manifest_text("teams:\n  a:\n    label: x\n")
 
 
+def test_unknown_manifest_version_is_rejected():
+    with pytest.raises(ManifestError, match="version"):
+        load_manifest_text(
+            """
+            version: 2
+            teams:
+              a:
+                codeowners_token: "@a"
+                members: [x]
+                teams_channel: c
+                label: l
+            """
+        )
+
+
+def test_manifest_version_one_is_accepted():
+    manifest = load_manifest_text(
+        """
+        version: 1
+        teams:
+          a:
+            codeowners_token: "@a"
+            members: [x]
+            teams_channel: c
+            label: l
+        """
+    )
+    assert manifest.team("a").channel == "c"
+
+
 def test_team_needs_a_roster_source_token():
     with pytest.raises(ManifestError, match="codeowners_token"):
         load_manifest_text(
@@ -101,6 +131,34 @@ def test_thresholds():
     assert not manifest.passes_thresholds(team, fresh, owned_files=5, now=now)
     assert not manifest.passes_thresholds(team, old, owned_files=1, now=now)
     assert manifest.passes_thresholds(team, old, owned_files=2, now=now)
+
+
+def test_non_integer_threshold_is_rejected_with_the_field_name():
+    with pytest.raises(ManifestError, match="min_mr_age_minutes"):
+        load_manifest_text(
+            """
+            teams:
+              a:
+                codeowners_token: "@a"
+                members: [x]
+                teams_channel: c
+                label: l
+                min_mr_age_minutes: soon
+            """
+        )
+
+    with pytest.raises(ManifestError, match="min_owned_files"):
+        load_manifest_text(
+            """
+            teams:
+              a:
+                codeowners_token: "@a"
+                members: [x]
+                teams_channel: c
+                label: l
+                min_owned_files: several
+            """
+        )
 
 
 def test_roster_is_the_union_of_all_sources(manifest):

@@ -13,14 +13,25 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from .codeowners import parse, unknown_owner_tokens
-from .gitlab import GitLab, GitLabError
+from .gitlab import GitLabError
 from .teams import Manifest
 
 log = logging.getLogger(__name__)
 
 MAX_TREE_ENTRIES = 50_000
+
+
+class DriftClient(Protocol):
+    """The GitLab operations the drift scan uses (a subset of :class:`GitLab`)."""
+
+    def group_projects(self, group: str, include_subgroups: bool = True) -> list[dict]: ...
+
+    def codeowners(self, project: str | int, ref: str) -> tuple[str | None, str]: ...
+
+    def tree_paths(self, project: str | int, ref: str) -> list[str]: ...
 
 
 @dataclass
@@ -107,7 +118,7 @@ def _count_files(
 
 
 def _scan_project_content(
-    client: GitLab,
+    client: DriftClient,
     manifest: Manifest,
     project: dict,
     ref: str,
@@ -140,7 +151,7 @@ def _scan_project_content(
 
 
 def _scan_project(
-    client: GitLab,
+    client: DriftClient,
     manifest: Manifest,
     project: dict,
     ref: str,
@@ -161,7 +172,7 @@ def _scan_project(
 def run_drift(
     *,
     manifest: Manifest,
-    client: GitLab,
+    client: DriftClient,
     group: str,
     ref: str = "",
     out_json: Path = Path("drift-report.json"),
@@ -198,11 +209,15 @@ def render_markdown(report: DriftReport) -> str:
     uncovered = [project for project in report.projects if project.uncovered]
     stale = [(project, pattern) for project in report.projects for pattern in project.stale_patterns]
 
-    lines.append(f"- projects scanned: **{len(report.projects)}**")
-    lines.append(f"- uncovered repos: **{len(uncovered)}**")
-    lines.append(f"- stale patterns: **{len(stale)}**")
-    lines.append(f"- roster problems: **{len(report.roster_problems)}**")
-    lines.append("")
+    lines.extend(
+        [
+            f"- projects scanned: **{len(report.projects)}**",
+            f"- uncovered repos: **{len(uncovered)}**",
+            f"- stale patterns: **{len(stale)}**",
+            f"- roster problems: **{len(report.roster_problems)}**",
+            "",
+        ]
+    )
 
     if uncovered:
         lines += ["## Uncovered repositories", ""]

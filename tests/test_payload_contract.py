@@ -102,6 +102,23 @@ def test_payload_envelope_matches_the_contract(manifest):
     assert payload["actions_taken"] == ["label_added:team::payments"]
 
 
+def test_owners_approved_reflects_the_resolved_roster(manifest):
+    """Approvers are credited against the full roster, not just `members`."""
+    approvals = Approvals(approved_by=("zoe", "k.lee"))
+    rosters = {"payments": {"zoe"}}  # zoe is a group member, not in `members`
+
+    payload = build_payload(
+        decision=Decision(team="payments", events=(MR_PIPELINE_GREEN,)),
+        mr=make_mr(),
+        ownership=OwnershipResult(),
+        approvals=approvals,
+        manifest=manifest,
+        roster_for=lambda team: rosters.get(team, set()),
+    )
+
+    assert payload["approvals"]["owners_approved"] == ["zoe"]
+
+
 def test_two_events_travel_in_one_message(manifest):
     payload = make_payload(
         manifest, events=(MR_PIPELINE_GREEN, OWNERSHIP_CHANGED), removed=("src/legacy/**",)
