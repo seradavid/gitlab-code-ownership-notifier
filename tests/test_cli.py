@@ -37,19 +37,43 @@ def mr_file(tmp_path):
 
 @pytest.fixture(autouse=True)
 def isolated_env(monkeypatch):
-    """The CLI reads CI_* and OWNERSHIP_* variables; keep the tests hermetic."""
+    """The CLI reads CI_* and OWNERSHIP_* variables; keep the tests hermetic.
+
+    GitLab sets ``CI_PROJECT_PATH`` (and friends) on every job, while GitHub Actions
+    does not, so a partial list makes these tests pass in one CI and fail in the other.
+    """
     for name in (
+        "OWNERSHIP_BOT_TOKEN",
+        "OWNERSHIP_CODEOWNERS_PATH",
         "OWNERSHIP_DECISION_ARTIFACT",
-        "OWNERSHIP_MODE",
-        "OWNERSHIP_MANIFEST_PROJECT",
-        "OWNERSHIP_MANIFEST_REF",
+        "OWNERSHIP_GITLAB_URL",
         "OWNERSHIP_MANIFEST_FILE",
         "OWNERSHIP_MANIFEST_PATH",
-        "CI_PROJECT_ID",
-        "CI_MERGE_REQUEST_IID",
+        "OWNERSHIP_MANIFEST_PROJECT",
+        "OWNERSHIP_MANIFEST_REF",
+        "OWNERSHIP_MODE",
+        "OWNERSHIP_PA_SHARED_SECRET",
+        "OWNERSHIP_PA_WORKFLOW_URL",
+        "OWNERSHIP_VERIFY_UPSTREAM",
+        "GITLAB_TOKEN",
+        "GITLAB_URL",
+        "BOT_TOKEN",
+        "CI_COMMIT_BRANCH",
+        "CI_COMMIT_REF_NAME",
         "CI_COMMIT_SHA",
-        "CI_MERGE_REQUEST_TARGET_BRANCH_NAME",
         "CI_DEFAULT_BRANCH",
+        "CI_JOB_ID",
+        "CI_MERGE_REQUEST_DIFF_BASE_SHA",
+        "CI_MERGE_REQUEST_IID",
+        "CI_MERGE_REQUEST_PROJECT_PATH",
+        "CI_MERGE_REQUEST_SHA",
+        "CI_MERGE_REQUEST_TARGET_BRANCH_NAME",
+        "CI_PIPELINE_ID",
+        "CI_PIPELINE_SOURCE",
+        "CI_PROJECT_DIR",
+        "CI_PROJECT_ID",
+        "CI_PROJECT_PATH",
+        "CI_SERVER_URL",
     ):
         monkeypatch.delenv(name, raising=False)
 
