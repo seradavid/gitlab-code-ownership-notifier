@@ -10,6 +10,11 @@ and the flow can read both during a migration.
 
 ## [Unreleased]
 
+### Changed
+
+- The runtime floor is now Python 3.14. The engine image, the CI matrix and the project
+  metadata all target 3.14 (was 3.11–3.13).
+
 ### Fixed
 
 - The GitLab release job recreates a release that already exists instead of failing, so

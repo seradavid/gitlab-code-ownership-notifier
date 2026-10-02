@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       # Nothing is uploaded to an index; building the distribution here keeps the
       # packaging metadata honest and gives the tag check below something to read.
       - run: python -m pip install build
