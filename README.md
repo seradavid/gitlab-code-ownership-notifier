@@ -50,7 +50,7 @@ Three things, all of them reviewable in a single merge request:
 ```yaml
 # .gitlab-ci.yml
 include:
-  - component: gitlab.com/seradavid/gitlab-code-ownership-notifier/ownership-notify@0.1.0
+  - component: gitlab.com/seradavid/gitlab-code-ownership-notifier/ownership-notify@0.2.0
     inputs:
       manifest-project: your-org/ownership    # the repository holding teams.yml
       mode: report                            # observe for a week before notifying

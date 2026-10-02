@@ -32,6 +32,10 @@ and the flow can read both during a migration.
   and backslash escapes**, matching the pattern language GitLab actually uses.
 - `--project` accepts a project path in offline runs without crashing `int()`, and a missing
   `created_at` no longer produces a naive datetime that breaks `age_minutes`.
+- **The component's default engine image is pinned to the packaged version again.** It had
+  been left on `0.1.0` while `ownership_bot.__version__` was `0.2.0`, so a consumer relying
+  on the default would have run an older engine than the component they installed.
+  `scripts/check_component.py` now fails when the two disagree, so this cannot ship silently.
 
 ### Changed
 
@@ -55,6 +59,9 @@ and the flow can read both during a migration.
   suppress a notification, never send one on a red pipeline.
 - An explicit `skip_label: ""` now disables the escape hatch instead of being replaced by the
   default label, and the drift report tolerates an unwritable output path.
+- **Unparenthesized `except A, B:` (PEP 758, Python 3.14 only) was parenthesized** to
+  `except (A, B):` across the engine and the scripts. Same behaviour, but the source no
+  longer depends on a 3.14-only syntax detail; the supported runtime is still 3.14.
 
 ## [0.2.0] - 2026-10-02
 

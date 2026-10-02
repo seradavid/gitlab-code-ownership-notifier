@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from ownership_bot import __version__
 from scripts.check_component import check_component, check_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -117,10 +118,47 @@ def test_a_pipeline_is_not_treated_as_a_component():
     assert check_component("job:\n  script: echo hi\n") == []
 
 
+def _component_with_image(tag: str) -> str:
+    return f"""\
+spec:
+  inputs:
+    image:
+      description: engine image
+      default: registry.example.com/group/ownership-bot:{tag}
+---
+ownership-mr-check:
+  script: ownership-bot mr-check
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$OWNERSHIP_SKIP == "true"'
+      when: never
+ownership-merge-audit:
+  script: ownership-bot merge-audit
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$OWNERSHIP_SKIP == "true"'
+      when: never
+"""
+
+
+def test_a_component_image_pinned_to_the_engine_version_is_accepted():
+    assert check_component(_component_with_image("0.2.0"), expected_version="0.2.0") == []
+
+
+def test_a_stale_component_image_is_reported():
+    """The component default must not lag the packaged engine (CONTRIBUTING.md § Releasing)."""
+    problems = check_component(_component_with_image("0.1.0"), expected_version="0.2.0")
+
+    assert len(problems) == 1
+    assert "not pinned to the packaged version" in problems[0]
+
+
 @pytest.mark.parametrize("relative", CI_FILES)
 def test_this_repository_ships_valid_ci_files(relative):
     """The regression guard: the real files must stay clean."""
     text = (REPO_ROOT / relative).read_text(encoding="utf-8")
 
     assert check_pipeline(text) == []
-    assert check_component(text) == []
+    assert check_component(text, expected_version=__version__) == []

@@ -27,6 +27,12 @@ from pathlib import Path
 
 import yaml
 
+# ``scripts/`` is ``sys.path[0]`` when this runs as ``python scripts/check_component.py``
+# (the invocation both pipelines use), so the engine package has to be importable by name.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from ownership_bot import __version__  # noqa: E402
+
 INPUT_REFERENCE = re.compile(r"\$\{\{\s*inputs\.([A-Za-z0-9_\-]+)\s*\}\}")
 
 #: Jobs this component is expected to publish, and the reason each must not block.
@@ -110,6 +116,37 @@ def _check_inputs(header: dict) -> tuple[list[str], set[str]]:
     return problems, set(inputs)
 
 
+def _check_image_tag(header: dict, expected_version: str | None) -> list[str]:
+    """The default engine image must be pinned to the packaged version.
+
+    GitLab's component tag and the image tag are the same plain ``X.Y.Z``
+    (CONTRIBUTING.md § Releasing). If they drift, a consumer who relies on the default
+    silently runs an older engine than the component they installed — the exact failure
+    this repository shipped once, with a default still on ``0.1.0`` while the package
+    was ``0.2.0``.
+    """
+    if expected_version is None:
+        return []
+
+    inputs = (header.get("spec") or {}).get("inputs") or {}
+    image_spec = inputs.get("image")
+    if image_spec is not None and not isinstance(image_spec, dict):
+        return ["input 'image' must be a mapping"]
+
+    default = (image_spec or {}).get("default")
+    if not isinstance(default, str) or not default:
+        return ["input 'image' has no default, so the engine version cannot be pinned"]
+
+    tag = default.rpartition(":")[2]
+    if tag != expected_version:
+        return [
+            f"component image '{default}' is not pinned to the packaged version "
+            f"'{expected_version}' — bump templates/ownership-notify/template.yml "
+            "alongside the release (CONTRIBUTING.md § Releasing)"
+        ]
+    return []
+
+
 def _check_references(text: str, declared: set[str]) -> list[str]:
     return [
         f"undeclared input referenced: '$[[ inputs.{name} ]]'"
@@ -137,8 +174,11 @@ def _check_job(name: str, body: object) -> list[str]:
     return problems
 
 
-def check_component(text: str) -> list[str]:
-    """Validate a CI/CD component template; a file without ``spec:`` is not one."""
+def check_component(text: str, *, expected_version: str | None = None) -> list[str]:
+    """Validate a CI/CD component template; a file without ``spec:`` is not one.
+
+    When ``expected_version`` is given, the ``image`` input's default tag must equal it.
+    """
     try:
         documents = _load(text)
     except yaml.YAMLError as exc:
@@ -153,6 +193,7 @@ def check_component(text: str) -> list[str]:
     header, jobs = documents
     problems, declared = _check_inputs(header)
     problems.extend(_check_references(text, declared))
+    problems.extend(_check_image_tag(header, expected_version))
 
     for name in REQUIRED_JOBS:
         problems.extend(_check_job(name, jobs.get(name)))
@@ -177,7 +218,7 @@ def main(argv: list[str]) -> int:
             continue
 
         text = path.read_text(encoding="utf-8")
-        problems = check_pipeline(text) + check_component(text)
+        problems = check_pipeline(text) + check_component(text, expected_version=__version__)
         if problems:
             failed = True
             print(f"{path}: {len(problems)} problem(s)")
