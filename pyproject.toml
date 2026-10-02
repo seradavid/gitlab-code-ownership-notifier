@@ -26,13 +26,13 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "requests>=2.31",
+    "requests>=2.33.0",
     "PyYAML>=6.0.3",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
+    "pytest>=9.0.3",
     "ruff>=0.6",
 ]
 
@@ -47,7 +47,7 @@ Issues = "https://github.com/seradavid/gitlab-code-ownership-notifier/issues"
 Security = "https://github.com/seradavid/gitlab-code-ownership-notifier/security/policy"
 
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools>=83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

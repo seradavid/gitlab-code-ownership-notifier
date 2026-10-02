@@ -26,6 +26,13 @@ and the flow can read both during a migration.
   component are the two supported ways to consume this; there is no longer anything to
   install from an index, and no trusted-publisher configuration to get wrong.
 
+### Security
+
+- Bumped dependency floors to the first versions with no known CVEs: `requests` to `>=2.33.0`
+  (CVE-2024-35195, CVE-2024-47081, CVE-2026-25645), `pytest` to `>=9.0.3` (CVE-2025-71176)
+  and `setuptools` to `>=83.0.0` (CVE-2025-47273, CVE-2026-59890). `PyYAML` (`>=6.0.3`) and
+  `ruff` (`>=0.6`) already pin clean versions.
+
 ## [0.1.0] - 2026-09-20
 
 First release: the engine, both jobs, the rollout tooling and the drift report.
