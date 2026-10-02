@@ -174,7 +174,7 @@ def _as_tuple(value, name: str, team_key: str) -> tuple:
 def _as_int(value, name: str, team_key: str) -> int:
     try:
         return int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         raise ManifestError(f"team '{team_key}': '{name}' must be an integer, got {value!r}") from None
 
 

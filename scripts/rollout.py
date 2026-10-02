@@ -230,7 +230,7 @@ def main(argv: list[str]) -> int:
     if args.teams_file:
         try:
             manifest = load_manifest(args.teams_file)
-        except ManifestError, OSError:
+        except (ManifestError, OSError):
             log.exception("cannot read %s", args.teams_file)
             return 2
         known = set(manifest.token_to_team) | {

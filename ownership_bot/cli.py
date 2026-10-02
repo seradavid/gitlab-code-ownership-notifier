@@ -88,7 +88,7 @@ def _project_id(value: str) -> int:
     """``--project`` may be a numeric id or a path; only the id is a project id."""
     try:
         return int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -228,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         manifest = runner.load_manifest_for(settings, client)
-    except GitLabError, OSError, ValueError:
+    except (GitLabError, OSError, ValueError):
         log.exception("cannot load teams.yml")
         return 2 if fail_ok else 0
 
