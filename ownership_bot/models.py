@@ -58,6 +58,7 @@ class OwnershipResult:
     files_unclaimed: int = 0
     diffs_truncated: bool = False
     codeowners_ref: str = ""
+    codeowners_path: str = ""
     codeowners_found: bool = True
     problems: list[str] = field(default_factory=list)
 
@@ -91,6 +92,7 @@ class Decision:
     matches: tuple[OwnershipMatch, ...] = ()
     added_patterns: tuple[str, ...] = ()
     removed_patterns: tuple[str, ...] = ()
+    ownership_path: str = ""
 
     @property
     def is_empty(self) -> bool:

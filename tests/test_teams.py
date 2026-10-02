@@ -40,6 +40,26 @@ def test_unknown_manifest_version_is_rejected():
         )
 
 
+def test_malformed_yaml_is_a_manifest_error_not_a_raw_yaml_error():
+    """The CLI catches ManifestError, so a syntax error must arrive as one."""
+    with pytest.raises(ManifestError, match="invalid YAML"):
+        load_manifest_text("teams: [oops\n")
+
+
+def test_a_shared_codeowners_token_keeps_the_first_team(caplog):
+    """A collision must not silently drop a team; it is logged and the first wins."""
+    manifest = load_manifest_text(
+        """
+        teams:
+          a: {codeowners_token: "@shared", members: [x], teams_channel: c1, label: l1}
+          b: {codeowners_token: "@shared", members: [y], teams_channel: c2, label: l2}
+        """
+    )
+
+    assert manifest.team_for_token("@shared") == "a"
+    assert any("shared by teams" in record.message for record in caplog.records)
+
+
 def test_manifest_version_one_is_accepted():
     manifest = load_manifest_text(
         """
@@ -55,17 +75,26 @@ def test_manifest_version_one_is_accepted():
     assert manifest.team("a").channel == "c"
 
 
+def test_an_empty_skip_label_disables_the_escape_hatch():
+    """`skip_label: ''` is the documented way to say "no skip label"."""
+    manifest = load_manifest_text(
+        """
+        skip_label: ""
+        teams:
+          a: {codeowners_token: "@a", members: [x], teams_channel: c, label: l}
+        """
+    )
+
+    assert manifest.skip_label == ""
+
+
 def test_team_needs_a_roster_source_token():
     with pytest.raises(ManifestError, match="codeowners_token"):
-        load_manifest_text(
-            "teams:\n  a:\n    teams_channel: c\n    label: l\n    members: [x]\n"
-        )
+        load_manifest_text("teams:\n  a:\n    teams_channel: c\n    label: l\n    members: [x]\n")
 
 
 def test_token_is_derived_from_gitlab_group_when_absent():
-    manifest = load_manifest_text(
-        "teams:\n  a:\n    gitlab_group: acme/teams/a\n    teams_channel: c\n    label: l\n"
-    )
+    manifest = load_manifest_text("teams:\n  a:\n    gitlab_group: acme/teams/a\n    teams_channel: c\n    label: l\n")
     assert manifest.team("a").codeowners_token == "@acme/teams/a"
     assert manifest.team_for_token("@acme/teams/a") == "a"
 
@@ -163,9 +192,7 @@ def test_non_integer_threshold_is_rejected_with_the_field_name():
 
 def test_roster_is_the_union_of_all_sources(manifest):
     payments = manifest.team("payments")
-    roster = manifest.roster(
-        payments, group_members=lambda group: {"zoe", "bob"}, codeowners_users={"alice"}
-    )
+    roster = manifest.roster(payments, group_members=lambda group: {"zoe", "bob"}, codeowners_users={"alice"})
     assert roster == {"alice", "bob", "zoe"}
 
 
@@ -174,8 +201,7 @@ def test_unresolved_roster_is_empty_not_silent(manifest):
     assert manifest.roster(team) == {"erin"}
 
     orphan = load_manifest_text(
-        "teams:\n  a:\n    codeowners_token: '@a'\n    gitlab_group: acme/teams/a\n"
-        "    teams_channel: c\n    label: l\n"
+        "teams:\n  a:\n    codeowners_token: '@a'\n    gitlab_group: acme/teams/a\n    teams_channel: c\n    label: l\n"
     ).team("a")
     assert manifest.roster(orphan, group_members=lambda group: set()) == set()
 

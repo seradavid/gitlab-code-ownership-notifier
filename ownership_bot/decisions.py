@@ -60,9 +60,7 @@ def _green_events(
         return []
     if not manifest.branch_in_scope(team, mr.target_branch):
         return []
-    if not manifest.passes_thresholds(
-        team, mr, owned_files=len(ownership.files_for(team_key)), now=now
-    ):
+    if not manifest.passes_thresholds(team, mr, owned_files=len(ownership.files_for(team_key)), now=now):
         return []
     return [MR_PIPELINE_GREEN]
 
@@ -83,9 +81,7 @@ def _team_events(
     if team_key in delta and OWNERSHIP_CHANGED in team.notify_on:
         events.append(OWNERSHIP_CHANGED)
 
-    events.extend(
-        _green_events(team_key, team, mr=mr, manifest=manifest, ownership=ownership, now=now)
-    )
+    events.extend(_green_events(team_key, team, mr=mr, manifest=manifest, ownership=ownership, now=now))
     return events
 
 
@@ -139,6 +135,7 @@ def decide_mr_check(
                 matches=tuple(ownership.matches.get(team_key, [])),
                 added_patterns=tuple(change.added) if change else (),
                 removed_patterns=tuple(change.removed) if change else (),
+                ownership_path=ownership.codeowners_path,
             )
         )
 
@@ -183,6 +180,7 @@ def decide_merge_audit(
                 team=team_key,
                 events=(MERGED_WITHOUT_OWNER_APPROVAL,),
                 matches=tuple(ownership.matches.get(team_key, [])),
+                ownership_path=ownership.codeowners_path,
             )
         )
 

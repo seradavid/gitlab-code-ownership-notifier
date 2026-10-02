@@ -76,7 +76,10 @@ class DriftReport:
 
 
 def _rules_index(
-    parsed, tree: list[str], manifest: Manifest, entry: ProjectDrift  # noqa: ANN001
+    parsed,
+    tree: list[str],
+    manifest: Manifest,
+    entry: ProjectDrift,  # noqa: ANN001
 ) -> list[dict]:
     """Per-rule file counts; a rule that matches nothing is stale (§7.2)."""
     index_entries: list[dict] = []
@@ -88,9 +91,7 @@ def _rules_index(
         index_entries.append(
             {
                 "pattern": rule.pattern,
-                "teams": sorted(
-                    {manifest.team_for_token(token) or token for token in rule.owners}
-                ),
+                "teams": sorted({manifest.team_for_token(token) or token for token in rule.owners}),
                 "files": len(matches),
             }
         )
@@ -193,14 +194,20 @@ def run_drift(
         report.index[entry.project] = index_entries
         report.projects.append(entry)
 
-    report.top_ignored = dict(
-        sorted(ignored_counts.items(), key=lambda item: item[1], reverse=True)[:10]
-    )
+    report.top_ignored = dict(sorted(ignored_counts.items(), key=lambda item: item[1], reverse=True)[:10])
 
-    out_json.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
-    out_md.write_text(render_markdown(report), encoding="utf-8")
+    _write_report(out_json, json.dumps(report.to_dict(), indent=2))
+    _write_report(out_md, render_markdown(report))
     log.info("drift report written: %s, %s", out_json, out_md)
     return report
+
+
+def _write_report(path: Path, content: str) -> None:
+    """The drift job is advisory; a bad output path must not fail it (§11)."""
+    try:
+        path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        log.warning("could not write %s: %s", path, exc)
 
 
 def render_markdown(report: DriftReport) -> str:

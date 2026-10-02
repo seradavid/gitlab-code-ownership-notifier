@@ -53,10 +53,7 @@ def build_payload(
     team = manifest.team(decision.team)
     roster = roster_for(decision.team) if roster_for is not None else manifest.roster(team)
 
-    matched = [
-        {"kind": match.kind, "value": match.value, "files": list(match.files)}
-        for match in decision.matches
-    ]
+    matched = [{"kind": match.kind, "value": match.value, "files": list(match.files)} for match in decision.matches]
 
     return {
         "schema": SCHEMA,
@@ -92,22 +89,22 @@ def build_payload(
             "source": f"CODEOWNERS@{ownership.codeowners_ref}"
             if ownership.codeowners_found
             else "CODEOWNERS@<missing>",
+            "path": ownership.codeowners_path,
             "matched": matched,
             "files_total": ownership.files_total,
             "files_owned": ownership.files_owned,
             "files_unclaimed": ownership.files_unclaimed,
+            "files_ignored": ownership.files_ignored,
             "diffs_truncated": ownership.diffs_truncated,
         },
         "ownership_change": {
-            "file": CODEOWNERS_PATHS[1],
+            "file": decision.ownership_path or CODEOWNERS_PATHS[1],
             "added": list(decision.added_patterns),
             "removed": list(decision.removed_patterns),
         },
         "approvals": {
             "approved_by": list(approvals.approved_by),
-            "owners_approved": [
-                username for username in approvals.approved_by if username in roster
-            ],
+            "owners_approved": [username for username in approvals.approved_by if username in roster],
             "checked_at": _iso(approvals.checked_at),
         },
         "actions_taken": list(actions_taken or []),
@@ -133,19 +130,24 @@ class Notifier:
         if not self.workflow_url:
             log.error("no Power Automate workflow URL configured; nothing sent")
             return False
+        if not self.shared_secret:
+            # Without the secret the body is unsigned, and the flow cannot tell a real
+            # notification from a forged one (SECURITY.md). Fail loudly rather than send.
+            log.error(
+                "no OWNERSHIP_PA_SHARED_SECRET configured; refusing to send an unsigned notification for team %s",
+                payload["team"]["id"],
+            )
+            return False
 
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
             "User-Agent": f"ownership-bot/{__version__}",
+            "X-Ownership-Signature": sign(body, self.shared_secret),
         }
-        if self.shared_secret:
-            headers["X-Ownership-Signature"] = sign(body, self.shared_secret)
 
         try:
-            response = self.session.post(
-                self.workflow_url, data=body, headers=headers, timeout=self.timeout
-            )
+            response = self.session.post(self.workflow_url, data=body, headers=headers, timeout=self.timeout)
         except requests.RequestException:
             log.exception("notification failed for team %s", payload["team"]["id"])
             return False

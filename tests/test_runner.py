@@ -52,13 +52,13 @@ class StubClient:
 
     # Structural only: these satisfy RunnerClient/ManifestReader but are never called,
     # because the tests feed local files rather than the fake network methods.
-    def raw_file(self, project, path, ref):  # noqa: ANN001
+    def raw_file(self, project, path, ref) -> str | None:  # noqa: ANN001
         return None
 
-    def codeowners(self, project, ref):  # noqa: ANN001
+    def codeowners(self, project, ref) -> tuple[str | None, str]:  # noqa: ANN001
         return None, "CODEOWNERS"
 
-    def merge_request_diffs(self, project, iid):  # noqa: ANN001
+    def merge_request_diffs(self, project, iid) -> tuple[list[str], bool]:  # noqa: ANN001
         return [], False
 
     # runner calls client.notes(...) to read the merge-audit markers
@@ -153,6 +153,21 @@ def test_failed_notification_does_not_label(workspace):
     assert client.labels == []
 
 
+def test_label_mode_without_a_client_does_not_crash(workspace):
+    """No token means no client; the label is reported as skipped, not an AttributeError."""
+    tmp_path, teams, codeowners = workspace
+    settings = build_settings(tmp_path, teams, codeowners, MODE_LABEL)
+    ctx = runner.RunContext(settings=settings, client=None, manifest=runner.load_manifest_for(settings, None))
+    summary = runner.run_mr_check(
+        ctx,
+        mr=make_mr(),
+        changed_files=[OWNED_FILE],
+        notifier=RecordingNotifier(),
+    )
+
+    assert summary["decisions"][0]["actions_taken"] == ["notify-skipped", "label-skipped:team::payments"]
+
+
 def test_owner_approved_team_is_silent(workspace):
     _summary, client = run_check(workspace, MODE_NOTIFY, approvals=["payments-member"])
     assert client.labels == []
@@ -166,9 +181,7 @@ def test_merge_audit_adds_marker_note_and_is_idempotent(workspace):
     notifier = RecordingNotifier()
     merged = make_mr(state="merged")
 
-    first = runner.run_merge_audit(
-        ctx, mr=merged, changed_files=[OWNED_FILE], notifier=notifier
-    )
+    first = runner.run_merge_audit(ctx, mr=merged, changed_files=[OWNED_FILE], notifier=notifier)
     assert len(first["decisions"]) == 1
     assert "ownership-bot:merged:payments" in client.note_bodies[0]
     assert first["decisions"][0]["actions_taken"] == ["notified", "note_added"]
@@ -281,3 +294,119 @@ def test_a_client_without_a_manifest_repository_says_so():
     message = str(excinfo.value)
     assert "no manifest repository configured" in message
     assert "OWNERSHIP_MANIFEST_PROJECT" in message
+
+
+# ------------------------------------------------- ownership changes and overlays
+
+
+class HeadClient(StubClient):
+    """StubClient that also serves the MR head's CODEOWNERS."""
+
+    def __init__(self, head_text: str | None, head_ref: str = "headsha") -> None:
+        super().__init__()
+        self.head_text = head_text
+        self.head_ref = head_ref
+        self.codeowners_refs: list[str] = []
+
+    def codeowners(self, project, ref) -> tuple[str | None, str]:  # noqa: ANN001
+        self.codeowners_refs.append(ref)
+        if ref == self.head_ref:
+            return self.head_text, ".gitlab/CODEOWNERS"
+        return None, "CODEOWNERS"
+
+
+def test_mr_check_reads_the_ownership_change_from_the_merge_request_head(workspace):
+    tmp_path, teams, codeowners = workspace
+    codeowners.write_text("a/** @acme/teams/devops\n", encoding="utf-8")
+    settings = build_settings(tmp_path, teams, codeowners, MODE_NOTIFY)
+    settings.commit_sha = "headsha"
+
+    client = HeadClient("* @acme/teams/platform\n")
+    ctx = runner.RunContext(settings=settings, client=client, manifest=runner.load_manifest_for(settings, client))
+    summary = runner.run_mr_check(
+        ctx,
+        mr=make_mr(),
+        changed_files=[".gitlab/CODEOWNERS"],
+        notifier=RecordingNotifier(),
+    )
+
+    events = {decision["team"]["id"]: decision["events"] for decision in summary["decisions"]}
+    assert events["devops"] == ["ownership_changed"]
+    assert "headsha" in client.codeowners_refs
+
+
+def test_mr_check_does_not_read_the_head_when_the_diff_ignores_codeowners(workspace):
+    tmp_path, teams, codeowners = workspace
+    settings = build_settings(tmp_path, teams, codeowners, MODE_NOTIFY)
+    settings.commit_sha = "headsha"
+
+    client = HeadClient("* @acme/teams/platform\n")
+    ctx = runner.RunContext(settings=settings, client=client, manifest=runner.load_manifest_for(settings, client))
+    runner.run_mr_check(ctx, mr=make_mr(), changed_files=[OWNED_FILE], notifier=RecordingNotifier())
+
+    assert "headsha" not in client.codeowners_refs
+
+
+def test_mr_check_does_not_read_the_head_for_a_suppressed_mr(workspace):
+    """A skip label yields no decisions, so the delta read is pointless (§11)."""
+    tmp_path, teams, codeowners = workspace
+    settings = build_settings(tmp_path, teams, codeowners, MODE_NOTIFY)
+    settings.commit_sha = "headsha"
+
+    client = HeadClient("* @acme/teams/platform\n")
+    ctx = runner.RunContext(settings=settings, client=client, manifest=runner.load_manifest_for(settings, client))
+    summary = runner.run_mr_check(
+        ctx,
+        mr=make_mr(labels=("ownership-bot::skip",)),
+        changed_files=[".gitlab/CODEOWNERS"],
+        notifier=RecordingNotifier(),
+    )
+
+    assert summary["decisions"] == []
+    assert "headsha" not in client.codeowners_refs
+
+
+def test_mr_check_treats_a_deleted_codeowners_as_all_removed(workspace):
+    """The head has no CODEOWNERS, so every pattern the target branch had disappears."""
+    tmp_path, teams, codeowners = workspace
+    codeowners.write_text("a/** @acme/teams/devops\n", encoding="utf-8")
+    settings = build_settings(tmp_path, teams, codeowners, MODE_NOTIFY)
+    settings.commit_sha = "headsha"
+
+    client = HeadClient(None)  # the MR deletes the file
+    ctx = runner.RunContext(settings=settings, client=client, manifest=runner.load_manifest_for(settings, client))
+    summary = runner.run_mr_check(
+        ctx,
+        mr=make_mr(),
+        changed_files=[".gitlab/CODEOWNERS"],
+        notifier=RecordingNotifier(),
+    )
+
+    events = {decision["team"]["id"]: decision["events"] for decision in summary["decisions"]}
+    assert events["devops"] == ["ownership_changed"]
+
+
+def test_module_overlay_resolves_identity_files_through_the_api(workspace):
+    """``GIT_STRATEGY: none`` has no checkout, so identity files come from the API."""
+    tmp_path, teams, codeowners = workspace
+    codeowners.write_text("libs/** @acme/teams/platform\n", encoding="utf-8")
+    settings = build_settings(tmp_path, teams, codeowners, MODE_NOTIFY)
+    settings.commit_sha = "headsha"
+
+    class PomClient(StubClient):
+        def raw_file(self, project, path, ref) -> str | None:  # noqa: ANN001
+            if path == "libs/payment-core/pom.xml":
+                return "<project><groupId>com.acme</groupId><artifactId>payment-core</artifactId></project>"
+            return None
+
+    client = PomClient()
+    ctx = runner.RunContext(settings=settings, client=client, manifest=runner.load_manifest_for(settings, client))
+    summary = runner.run_mr_check(
+        ctx,
+        mr=make_mr(),
+        changed_files=["libs/payment-core/src/A.java"],
+        notifier=RecordingNotifier(),
+    )
+
+    notified = {decision["team"]["id"] for decision in summary["decisions"]}
+    assert "payments" in notified  # matched by identity, not by CODEOWNERS

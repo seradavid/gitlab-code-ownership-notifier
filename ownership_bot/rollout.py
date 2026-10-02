@@ -63,7 +63,11 @@ def load_mapping(text: str, *, source: str = "mapping.yml") -> dict[str, RepoDra
           mode: report                             # phase 2: report before notify
     ```
     """
-    data = yaml.safe_load(text) or {}
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise RolloutError(f"{source}: invalid YAML: {exc}") from exc
+    data = data or {}
     if not isinstance(data, dict):
         raise RolloutError(f"{source}: top level must be a mapping")
 
@@ -141,9 +145,7 @@ def _section_name(token: str) -> str:
     return token.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
 
 
-def uncovered_prefixes(
-    tree_paths: list[str], patterns: dict[str, str], *, depth: int = 3
-) -> list[str]:
+def uncovered_prefixes(tree_paths: list[str], patterns: dict[str, str], *, depth: int = 3) -> list[str]:
     """Top-level directories of a repository that no rule (and no fallback) covers.
 
     This is the list a human has to make a decision about during bootstrap: the files
@@ -153,14 +155,8 @@ def uncovered_prefixes(
         return []
 
     parsed = parse("\n".join(f"{pattern} @placeholder" for pattern in patterns))
-    candidates = {
-        "/".join(path.split("/")[:depth])
-        for path in tree_paths
-        if "/" in path
-    }
-    return sorted(
-        candidate for candidate in candidates if parsed.rule_for(candidate) is None
-    )
+    candidates = {"/".join(path.split("/")[:depth]) for path in tree_paths if "/" in path}
+    return sorted(candidate for candidate in candidates if parsed.rule_for(candidate) is None)
 
 
 def validate_codeowners(text: str, *, known_tokens: set[str] | None = None) -> list[str]:
@@ -196,35 +192,95 @@ def component_include_block(component: str, inputs: dict[str, str] | None = None
     return "\n".join(lines) + "\n"
 
 
+def _component_path_line(component: str) -> str:
+    return component.split("@", 1)[0]
+
+
 def has_include(ci_text: str, component: str) -> bool:
-    """True when the component path already appears in the file (bare path match)."""
-    return component.split("@", 1)[0] in ci_text
+    """True when an ``include:`` entry already references this component.
+
+    Matched as a whole YAML mapping rather than a bare substring, so a mention in a
+    comment or a similarly named component does not look like an existing include. A
+    file that does not parse — ``!reference`` and other custom tags are common in GitLab
+    CI — falls back to the conservative substring check, so an include that is already
+    present is never duplicated.
+    """
+    target = _component_path_line(component)
+    try:
+        data = yaml.safe_load(ci_text)
+    except yaml.YAMLError:
+        return target in ci_text
+    if not isinstance(data, dict):
+        return False
+
+    entries = data.get("include")
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return False
+
+    for entry in entries:
+        if isinstance(entry, dict):
+            value = entry.get("component")
+            if isinstance(value, str) and _component_path_line(value) == target:
+                return True
+    return False
+
+
+def _sequence_indent(block: str) -> str | None:
+    """Where the first item of a block sequence starts, so we can match it.
+
+    Returns the item's leading whitespace (``""`` at column 0, which YAML allows for a
+    sequence under a mapping key). ``""`` also means the block holds no items yet — the
+    next line is a sibling key or the block is empty. ``None`` means the block is a
+    mapping (or tab-indented), a shape we refuse to rewrite rather than guess at.
+    """
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = line[: len(line) - len(line.lstrip(" \t"))]
+        if stripped.startswith("-"):
+            return None if "\t" in indent else indent
+        # A non-item at column 0 is the next top-level key, not part of `include:`.
+        return "" if indent == "" else None
+    return ""
+
+
+def _reindent(entries: list[str], indent: str) -> str:
+    """Shift the generated entries (based at two spaces) onto ``indent``."""
+    return "\n".join(indent + line[2:] if line.startswith("  ") else indent + line for line in entries)
 
 
 def ensure_include(ci_text: str, component: str, inputs: dict[str, str] | None = None) -> str:
     """Insert the component include, preserving the rest of the file byte for byte.
 
     Raises :class:`RolloutError` when the file has an ``include:`` whose shape we
-    should not touch (an inline scalar or list). The caller reports that instead of
-    guessing, so a rollout MR never silently rewrites someone's pipeline.
+    should not touch (an inline scalar, a block mapping, or tab-indented entries). The
+    caller reports that instead of guessing, so a rollout MR never silently rewrites
+    someone's pipeline.
     """
     if has_include(ci_text, component):
         return ci_text
 
-    entries = component_include_block(component, inputs).splitlines()[1:]
-    inserted = "\n".join(entries)
+    # The component path can contain ``@`` but never at the start of the value, so YAML
+    # reads `host/path@version` as a plain scalar. No quoting needed.
+    include_block = component_include_block(component, inputs)
+    entries = include_block.splitlines()[1:]
 
     match = _INCLUDE_RE.search(ci_text)
     if match is None:
-        return f"{component_include_block(component, inputs)}\n{ci_text.lstrip()}"
+        return f"{include_block}\n{ci_text.lstrip()}"
 
     if ci_text[match.end() : match.end() + 1] not in ("", "\n"):
-        raise RolloutError(
-            "existing 'include:' is not a block list; add the component include by hand"
-        )
+        raise RolloutError("existing 'include:' is not a block list; add the component include by hand")
 
-    _, _, rest = ci_text[match.end() :].partition("\n")
-    remainder = rest.lstrip("\n")
-    prefix = f"{ci_text[: match.end()]}\n{inserted}\n"
-    return f"{prefix}\n{remainder}" if remainder else prefix
+    rest = ci_text[match.end() :].removeprefix("\n")
+    indent = _sequence_indent(rest)
+    if indent is None:
+        raise RolloutError("existing 'include:' is not a block list; add the component include by hand")
 
+    # Match the existing entries' indentation so the merged block reads as one list
+    # rather than a sequence whose items are indented inconsistently.
+    inserted = _reindent(entries, indent)
+    return f"{ci_text[: match.end()]}\n{inserted}\n{rest}"

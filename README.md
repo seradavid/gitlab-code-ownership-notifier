@@ -85,7 +85,7 @@ No `stages:` change is needed: the audit runs in `stage: .pre` and the MR check 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                    # 105 tests, no network access
+pytest                                    # 188 tests, no network access
 ```
 
 The engine is pure enough to run offline against the files in `examples/`:
@@ -224,8 +224,10 @@ One POST per (team, MR) to the Power Automate flow, `schema: 1`:
   "team": { "id": "payments", "channel": "Payments Engineering", "label": "team::payments",
             "branches": ["master"], "mentions": [], "roster_resolved": true },
   "merge_request": { "project_path": "…", "iid": 412, "draft": false, "target_branch": "master" },
-  "ownership": { "source": "CODEOWNERS@master", "matched": [ … ], "files_total": 7,
-                 "files_owned": 4, "files_unclaimed": 1, "diffs_truncated": false },
+  "ownership": { "source": "CODEOWNERS@master", "path": ".gitlab/CODEOWNERS",
+                 "matched": [ … ], "files_total": 7,
+                 "files_owned": 4, "files_unclaimed": 1, "files_ignored": 2,
+                 "diffs_truncated": false },
   "ownership_change": { "file": ".gitlab/CODEOWNERS", "added": [], "removed": [] },
   "approvals": { "approved_by": ["alice"], "owners_approved": ["alice"], "checked_at": "…" },
   "actions_taken": ["notified", "label_added:team::payments"]
@@ -236,7 +238,9 @@ Events are combined: an MR that greens *and* moves ownership produces one messag
 entries in `events`, so a team never gets two pings for one change.
 
 The body is signed with `X-Ownership-Signature: sha256=<hex hmac>`. In the flow, recompute
-the HMAC over the raw body and compare before parsing; reject on mismatch.
+the HMAC over the raw body and compare before parsing; reject on mismatch. If
+`OWNERSHIP_PA_SHARED_SECRET` is unset the engine refuses to send rather than POST an
+unauthenticated body.
 
 ---
 

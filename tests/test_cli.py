@@ -88,9 +88,7 @@ def test_offline_mr_state_override_makes_the_audit_possible(mr_file):
 
 
 def test_synthesised_mr_defaults_to_opened_and_honours_the_flags():
-    args = cli._parse_args(
-        ["--author", "dave", "--target-branch", "develop", "--labels", "team::payments", "mr-check"]
-    )
+    args = cli._parse_args(["--author", "dave", "--target-branch", "develop", "--labels", "team::payments", "mr-check"])
     mr = cli._offline_mr(args, settings_for("mr-check"))
 
     assert mr.state == "opened"
@@ -153,8 +151,44 @@ def test_offline_needs_both_local_inputs(monkeypatch):
 
     # No changed-files list means the diff still has to come from the API.
     assert (
-        cli._is_offline(
-            cli._parse_args(["mr-check"]), settings_for("--teams-file", "teams.yml", "mr-check")
-        )
-        is False
+        cli._is_offline(cli._parse_args(["mr-check"]), settings_for("--teams-file", "teams.yml", "mr-check")) is False
     )
+
+
+def test_offline_mr_accepts_a_project_path_as_well_as_an_id():
+    """``--project`` is documented as id *or* path; a path must not crash the int()."""
+    args = cli._parse_args(["--project", "acme/services/payment-service", "mr-check"])
+
+    mr = cli._offline_mr(args, settings_for("--project", "acme/services/payment-service", "mr-check"))
+
+    assert mr.project_id == 0
+    assert mr.project_path == "acme/services/payment-service"
+
+
+def test_offline_mr_keeps_a_numeric_project_id():
+    args = cli._parse_args(["--project", "42", "mr-check"])
+
+    assert cli._offline_mr(args, settings_for("--project", "42", "mr-check")).project_id == 42
+
+
+# --------------------------------------------------------------- exit-code contract
+
+
+def test_a_pipeline_job_exits_zero_when_the_manifest_is_missing(tmp_path):
+    """A configuration error must never fail a build (§11)."""
+    missing = tmp_path / "nope.yml"
+
+    assert cli.main(["--teams-file", str(missing), "mr-check"]) == 0
+
+
+def test_drift_exits_nonzero_when_it_cannot_run(tmp_path):
+    """drift is a diagnostic, so a broken manifest is a real failure."""
+    missing = tmp_path / "nope.yml"
+
+    assert cli.main(["--teams-file", str(missing), "drift", "--group", "acme"]) == 2
+
+
+def test_an_invalid_mode_is_a_clean_configuration_error(monkeypatch):
+    monkeypatch.setenv("OWNERSHIP_MODE", "nonsense")
+
+    assert cli.main(["mr-check"]) == 0

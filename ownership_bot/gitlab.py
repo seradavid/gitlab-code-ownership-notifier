@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -57,21 +57,21 @@ class GitLab:
 
     # ------------------------------------------------------------------ plumbing
 
-    def _request(
-        self, method: str, path: str, *, params=None, body=None, expect=(200, 201)
-    ) -> Any:
+    def _request(self, method: str, path: str, *, params=None, body=None, expect=(200, 201)) -> Any:
         url = f"{self.base_url.rstrip('/')}/api/v4{path}"
         # Never follow redirects: the session carries the PRIVATE-TOKEN header, and
         # `requests` only strips `Authorization`/`Cookie` on a cross-host redirect, so a
         # 3xx to another host would leak the token. The GitLab API does not redirect for
         # these endpoints; a 3xx is reported as an error below instead.
-        response = self.session.request(
-            method, url, params=params, json=body, timeout=self.timeout, allow_redirects=False
-        )
-        if response.status_code not in expect:
-            raise GitLabError(
-                f"{method} {path} -> HTTP {response.status_code}: {response.text[:300]}"
+        try:
+            response = self.session.request(
+                method, url, params=params, json=body, timeout=self.timeout, allow_redirects=False
             )
+        except requests.RequestException as exc:
+            # Normalise transport failures so callers can degrade on GitLabError alone.
+            raise GitLabError(f"{method} {path} failed: {exc}") from exc
+        if response.status_code not in expect:
+            raise GitLabError(f"{method} {path} -> HTTP {response.status_code}: {response.text[:300]}")
         if response.status_code == 204 or not response.content:
             return None
         return response.json()
@@ -229,9 +229,7 @@ class GitLab:
     def pipeline_jobs(self, project: str | int, pipeline_id: str | int) -> list[dict]:
         return list(self.paginate(f"/projects/{self._ref(project)}/pipelines/{pipeline_id}/jobs"))
 
-    def commit_authors(
-        self, project: str | int, path: str = "", ref: str = "", limit: int = 100
-    ) -> dict[str, int]:
+    def commit_authors(self, project: str | int, path: str = "", ref: str = "", limit: int = 100) -> dict[str, int]:
         """Recent authors touching ``path``, as ``{email: commit_count}``.
 
         Used only by the bootstrap script to *suggest* owners. The commits API returns
@@ -246,9 +244,7 @@ class GitLab:
             params["ref_name"] = ref
 
         counts: dict[str, int] = {}
-        for index, commit in enumerate(
-            self.paginate(f"/projects/{self._ref(project)}/repository/commits", params)
-        ):
+        for index, commit in enumerate(self.paginate(f"/projects/{self._ref(project)}/repository/commits", params)):
             if index >= limit:
                 break
             email = (commit.get("author_email") or "").lower()
@@ -318,7 +314,7 @@ def to_merge_request(data: dict, *, project_path: str = "") -> MergeRequest:
         draft=bool(data.get("draft") or data.get("work_in_progress")),
         source_branch=data.get("source_branch") or "",
         target_branch=data.get("target_branch") or "",
-        created_at=_parse(created) or datetime.now(),
+        created_at=_parse(created) or datetime.now(UTC),
         labels=frozenset(data.get("labels") or []),
         merged_at=_parse(merged),
     )

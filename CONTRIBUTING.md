@@ -10,7 +10,7 @@ Free-tier constraint.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # 128 tests, no network access needed
+pytest                      # 188 tests, no network access needed
 ```
 
 Nothing in the test suite touches a GitLab instance: the decision tables are pure functions,

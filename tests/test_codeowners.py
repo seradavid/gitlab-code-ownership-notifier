@@ -132,3 +132,23 @@ def test_team_pattern_delta_reports_unknown_tokens_separately():
 )
 def test_pattern_matrix(pattern, path, expected):
     assert bool(translate_pattern(pattern).match(path)) is expected
+
+
+@pytest.mark.parametrize(
+    "pattern,path,expected",
+    [
+        ("[!a]*.md", "b.md", True),  # negated class: b is not a
+        ("[!a]*.md", "a.md", False),
+        ("[!a]*.md", "x/a.md", False),  # does not cross the directory separator
+        ("[^a]*.md", "b.md", True),  # `^` is an accepted negation marker too
+        ("[abc].py", "b.py", True),
+        ("[abc].py", "d.py", False),
+        ("{*.js,*.ts}", "module.ts", True),  # glob inside a brace alternative
+        ("{*.js,*.ts}", "module.js", True),
+        ("{*.js,*.ts}", "module.css", False),
+        (r"\*.md", "*.md", True),  # escaped star is literal
+        (r"\*.md", "a.md", False),
+    ],
+)
+def test_pattern_language_extensions(pattern, path, expected):
+    assert bool(translate_pattern(pattern).match(path)) is expected

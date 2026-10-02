@@ -4,9 +4,10 @@
     ownership-bot merge-audit   # first stage of the post-merge pipeline (condition 2)
     ownership-bot drift         # weekly governance report
 
-Both pipeline commands always exit 0: a notification failure must never break a
-build and must never delay a deployment (docs/design.md §11). Set
-``--mode report`` to decide without writing anything.
+Both pipeline commands always exit 0, even on a configuration or API error: a notification
+problem must never break a build and must never delay a deployment (docs/design.md §11).
+``drift`` is a diagnostic run on purpose, so it exits non-zero when it cannot do its job.
+Set ``--mode report`` to decide without writing anything.
 """
 
 from __future__ import annotations
@@ -44,15 +45,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--labels", help="comma-separated MR labels (offline)")
     parser.add_argument(
         "--state",
-        help="MR state for offline runs (default: 'opened' when synthesising an MR, "
-        "otherwise whatever --mr-json says)",
+        help="MR state for offline runs (default: 'opened' when synthesising an MR, otherwise whatever --mr-json says)",
     )
     parser.add_argument("--draft", action="store_true", help="treat the MR as a draft (offline)")
     parser.add_argument("--skip-upstream-check", action="store_true")
     parser.add_argument(
         "--json-out",
-        help="where to write the machine-readable decision "
-        "(default: OWNERSHIP_DECISION_ARTIFACT, else decision.json)",
+        help="where to write the machine-readable decision (default: OWNERSHIP_DECISION_ARTIFACT, else decision.json)",
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
@@ -85,6 +84,14 @@ def _settings(args: argparse.Namespace) -> Settings:
     return settings
 
 
+def _project_id(value: str) -> int:
+    """``--project`` may be a numeric id or a path; only the id is a project id."""
+    try:
+        return int(value)
+    except TypeError, ValueError:
+        return 0
+
+
 def _offline_mr(args: argparse.Namespace, settings: Settings) -> MergeRequest:
     """Build the MR for an offline run, from ``--mr-json`` or from the flags."""
     if args.mr_json:
@@ -94,7 +101,7 @@ def _offline_mr(args: argparse.Namespace, settings: Settings) -> MergeRequest:
 
     labels = frozenset(label.strip() for label in (args.labels or "").split(",") if label.strip())
     return MergeRequest(
-        project_id=int(settings.project_id or 0),
+        project_id=_project_id(settings.project_id),
         project_path=settings.project_path or args.project or "local/project",
         iid=int(settings.merge_request_iid or 0),
         title="(offline run)",
@@ -151,7 +158,11 @@ def _is_offline(args: argparse.Namespace, settings: Settings) -> bool:
 
 
 def _cmd_mr_check(
-    args: argparse.Namespace, ctx: runner.RunContext, settings: Settings, client, offline: bool  # noqa: ANN001
+    args: argparse.Namespace,
+    ctx: runner.RunContext,
+    settings: Settings,
+    client,
+    offline: bool,  # noqa: ANN001
 ) -> None:
     if not offline and runner.upstream_failed(settings, client):
         log.info("upstream failure detected — exiting quietly")
@@ -174,7 +185,11 @@ def _cmd_mr_check(
 
 
 def _cmd_merge_audit(
-    args: argparse.Namespace, ctx: runner.RunContext, settings: Settings, client, offline: bool  # noqa: ANN001
+    args: argparse.Namespace,
+    ctx: runner.RunContext,
+    settings: Settings,
+    client,
+    offline: bool,  # noqa: ANN001
 ) -> None:
     if not offline:
         mr = _fetch_merged_mr(client, settings)
@@ -195,11 +210,16 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)-7s %(message)s",
     )
 
+    # The two pipeline jobs must never fail a build (§11). A configuration problem is
+    # still an error *we* want visible, so it exits 0 for the pipeline commands but a
+    # non-zero code for `drift`, which is a diagnostic someone runs on purpose.
+    fail_ok = args.command == "drift"
+
     try:
         settings = _settings(args)
     except ValueError:
         log.exception("invalid configuration")
-        return 2
+        return 2 if fail_ok else 0
 
     client = _client(settings)
 
@@ -208,9 +228,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         manifest = runner.load_manifest_for(settings, client)
-    except (GitLabError, OSError, ValueError):
+    except GitLabError, OSError, ValueError:
         log.exception("cannot load teams.yml")
-        return 2
+        return 2 if fail_ok else 0
 
     if args.command == "drift":
         return _cmd_drift(args, manifest, client)

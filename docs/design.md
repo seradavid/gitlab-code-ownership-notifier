@@ -130,6 +130,10 @@ A small central `teams.yml` holds only what CODEOWNERS cannot express.
 - **Sections** (`[Name]`) as grouping labels in the UI (they are not patterns)
 - **Last matching pattern wins** — order is meaningful
 
+The pattern language also supports `?`, character classes (`[abc]`, and negated
+`[!abc]`), brace alternation (`{a,b}`, whose alternatives may themselves contain glob
+syntax such as `{*.js,*.ts}`) and a backslash escape for a literal metacharacter.
+
 What it cannot express, and therefore lives in `teams.yml`:
 
 - **No negation.** There is no way to say "everything except this". Ignore lists are applied
@@ -192,7 +196,9 @@ Notes that matter:
 - **`ignore:` wins over CODEOWNERS**, which is how "no notifications for docs or lock files"
   is expressed.
 - **`module_overlay:` is normally empty** and exists only for components that genuinely move
-  between directories. Identity comes from the nearest `pom.xml` / `package.json`.
+  between directories. Identity comes from the nearest `pom.xml` / `package.json`, read from a
+  local checkout when there is one and otherwise fetched through the API — so it works in the
+  `GIT_STRATEGY: none` component, which has no checkout.
 - The bot reads `teams.yml` from a **local file** when one is configured — that is how offline
   runs and dry runs need no token at all — and otherwise fetches it from the manifest
   repository with the bot token. The local file wins. The remote side takes a project, a ref
@@ -301,7 +307,9 @@ the same MR — often the very MR that should be notified. Reporting the delta i
 that safe:
 
 - patterns **removed** from a team's control and patterns **added** are both announced
-- the delta is computed from the target-branch CODEOWNERS versus the MR's version
+- the delta is computed from the target-branch CODEOWNERS versus the MR's own version, read
+  from the head commit of its source branch. The read only happens when the diff touches a
+  CODEOWNERS path, and an explicit `--codeowners-after-file` still wins for offline runs.
 - it is one more value in `events`, not a separate message
 
 ## 10. Notification contract
@@ -343,10 +351,17 @@ The flow recipe:
 4. Mention any `team.mentions`.
 5. Respond `202` immediately and post asynchronously, so GitLab never waits on Teams.
 
+The engine **refuses to send an unsigned notification**: without `OWNERSHIP_PA_SHARED_SECRET`
+the `Notifier` logs an error and returns failure rather than POSTing a body the flow cannot
+authenticate.
+
 ## 11. Failure handling, security, observability
 
 - **Every pipeline command exits 0**, including after a GitLab or Teams failure. A
-  notification problem must never fail a build or delay a deployment.
+  notification problem must never fail a build or delay a deployment. This includes
+  configuration errors such as a missing or malformed `teams.yml`: the job logs the problem
+  and exits 0. `drift` is the exception — it is a diagnostic run on purpose, so it exits
+  non-zero when it cannot run.
 - **Webhook first, label second**: if the notification fails, the label is not applied, so
   the next pipeline run retries instead of silently dropping the ping.
 - **The bot token** is a project access token with `api` + `write_repository`, stored as a
@@ -374,7 +389,8 @@ The flow recipe:
 ## 13. Test strategy
 
 - **Table-driven unit tests** for the CODEOWNERS parser: last-match-wins, anchoring, `*`
-  versus `**`, `{a,b}`, `[abc]`, `?`, sections, comments, invalid lines, unknown tokens.
+  versus `**`, `{a,b}`, `[abc]`, `[!abc]`, `?`, backslash escapes, sections, comments,
+  invalid lines, unknown tokens.
 - **`teams.yml` policy tests**: defaults/overrides, required fields, token derivation, branch
   scope, thresholds, roster union, validation problems.
 - **A decision matrix** covering every row of §9, including the deliberate oddities (no draft

@@ -8,6 +8,54 @@ Because the notification payload is consumed by a Power Automate flow you contro
 payload's `schema` field is the compatibility contract: it changes only in a major release,
 and the flow can read both during a migration.
 
+## [Unreleased]
+
+### Fixed
+
+- **Ownership-change alerts now fire in real pipelines.** `ownership_changed` was only ever
+  emitted when a local `--codeowners-after-file` was supplied, so the shipped component never
+  computed a delta. The MR's own CODEOWNERS is now read from the head commit of its source
+  branch, but only when the diff touches a CODEOWNERS path, and not at all for a suppressed MR
+  (skip label or ignored author), which produces no decisions anyway.
+- **`module_overlay` now works under `GIT_STRATEGY: none`.** Identity files
+  (`pom.xml` / `package.json`) are resolved from a local checkout when one exists and through
+  the GitLab API otherwise, instead of silently matching nothing in the component.
+- **Malformed YAML is a clean configuration error.** A broken `teams.yml` (or `mapping.yml`)
+  is now reported as a manifest/rollout error instead of escaping as a raw `yaml.YAMLError`.
+- **GitLab transport failures are normalised to `GitLabError`.** Connection errors and
+  timeouts behave like any other API error, so the callers that log-and-continue actually do.
+- **A missing client no longer crashes label/note writes.** With no bot token the run reports
+  `label-skipped` (or skips the audit note) instead of raising `AttributeError`.
+- **A shared `codeowners_token` keeps the first team and logs the collision** instead of
+  letting the last declaration silently capture (and drop) a team.
+- **CODEOWNERS parsing gained `[!abc]` negated classes, globs inside `{a,b}` (`{*.js,*.ts}`)
+  and backslash escapes**, matching the pattern language GitLab actually uses.
+- `--project` accepts a project path in offline runs without crashing `int()`, and a missing
+  `created_at` no longer produces a naive datetime that breaks `age_minutes`.
+
+### Changed
+
+- **Pipeline jobs now exit 0 even on a configuration error** (a missing or malformed
+  `teams.yml`), matching the documented "never fail a build" contract. `drift` keeps a
+  non-zero exit because it is a diagnostic run on purpose.
+- **The engine refuses to send an unsigned notification.** With no
+  `OWNERSHIP_PA_SHARED_SECRET` the notifier logs an error and reports failure instead of
+  POSTing a body the Power Automate flow cannot authenticate.
+- The notification payload now carries `ownership.path` and `ownership.files_ignored`, and
+  `ownership_change.file` reports the CODEOWNERS location the repository actually uses
+  (root `CODEOWNERS`, `.gitlab/CODEOWNERS` or `docs/CODEOWNERS`) instead of always
+  `.gitlab/CODEOWNERS`.
+- `has_include` matches a real `include:` entry rather than any substring, so a mention in a
+  comment or a longer component name no longer looks like an existing include. The component
+  is inserted at the existing entries' indentation, a block mapping is refused rather than
+  guessed at, and a file that does not parse (`!reference` and other custom tags) falls back
+  to the conservative check so an existing include is never duplicated.
+- `upstream_failed` is documented as "any non-allowed failure in the pipeline", which is what
+  it has always checked (the jobs API does not expose a stable ordering); it can only
+  suppress a notification, never send one on a red pipeline.
+- An explicit `skip_label: ""` now disables the escape hatch instead of being replaced by the
+  default label, and the drift report tolerates an unwritable output path.
+
 ## [0.2.0] - 2026-10-02
 
 ### Changed

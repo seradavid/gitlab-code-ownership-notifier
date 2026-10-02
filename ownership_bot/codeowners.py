@@ -5,7 +5,8 @@ deliberately explicit and covered by tests:
 
 * **The last matching pattern wins** (order in the file is meaningful).
 * ``*`` does not cross ``/``; ``**`` does.
-* ``?``, ``[abc]`` and ``{a,b}`` are supported.
+* ``?``, ``[abc]``, ``[!abc]``, ``{a,b}`` and a backslash escape are supported, and a
+  ``{a,b}`` alternative may itself contain glob syntax.
 * ``!`` negation is **not** supported. Ignore lists therefore live in ``teams.yml``
   and are applied *before* CODEOWNERS matching.
 * Sections (``[Name]``) are grouping labels only; they are recorded, not matched.
@@ -38,6 +39,7 @@ def is_owner_token(token: str) -> bool:
     pattern = _AT_TOKEN_RE if token.startswith("@") else _EMAIL_RE
     return pattern.match(token) is not None
 
+
 _SECTION_RE = re.compile(r"^\^?\[(?P<name>[^\]]+)\]$")
 
 
@@ -59,19 +61,45 @@ def _translate_star(p: str, i: int) -> _Piece:
 
 
 def _translate_bracket(p: str, i: int) -> _Piece:
-    """``[abc]`` character class; literal if the class is unterminated."""
+    """``[abc]`` / ``[!abc]`` character class; literal if the class is unterminated."""
     end = p.find("]", i + 1)
     if end == -1:
         return _Piece(re.escape(p[i]), i + 1)
-    return _Piece(p[i : end + 1], end + 1)
+
+    body = p[i + 1 : end]
+    negated = body[:1] in ("!", "^")
+    if negated:
+        body = body[1:]
+    if not body:
+        return _Piece(re.escape(p[i]), i + 1)
+
+    # Keep ranges (`a-z`) but escape characters that would change a class's meaning.
+    safe = "".join(char if char == "-" else ("\\" + char if char in "^\\[]" else char) for char in body)
+    return _Piece(f"[{'^' if negated else ''}{safe}]", end + 1)
+
+
+def _translate_fragment(p: str) -> str:
+    """Translate a brace alternative, which may itself contain glob syntax."""
+    out: list[str] = []
+    i = 0
+    while i < len(p):
+        piece = _translate_char(p, i)
+        out.append(piece.text)
+        i = piece.next_index
+    return "".join(out)
 
 
 def _translate_brace(p: str, i: int) -> _Piece:
+    """``{a,b}`` alternatives, each translated so `{*.js,*.ts}` works.
+
+    A brace is an alternation, not a literal: the alternatives are globs like any
+    other part of the pattern. Unterminated braces are literal.
+    """
     end = p.find("}", i + 1)
     if end == -1:
         return _Piece(re.escape(p[i]), i + 1)
     alternatives = p[i + 1 : end].split(",")
-    return _Piece(f"(?:{'|'.join(re.escape(a) for a in alternatives)})", end + 1)
+    return _Piece(f"(?:{'|'.join(_translate_fragment(a) for a in alternatives)})", end + 1)
 
 
 def _translate_char(p: str, i: int) -> _Piece:
@@ -84,6 +112,8 @@ def _translate_char(p: str, i: int) -> _Piece:
         return _translate_bracket(p, i)
     if char == "{":
         return _translate_brace(p, i)
+    if char == "\\" and i + 1 < len(p):
+        return _Piece(re.escape(p[i + 1]), i + 2)
     if char in _REGEX_SPECIAL:
         return _Piece("\\" + char, i + 1)
     return _Piece(char, i + 1)
@@ -152,17 +182,14 @@ def _strip_comment(line: str) -> str:
     return line.split("#", 1)[0].strip()
 
 
-def _rule_from_line(
-    number: int, line: str, raw_line: str, section: str | None
-) -> tuple[Rule | None, list[str]]:
+def _rule_from_line(number: int, line: str, raw_line: str, section: str | None) -> tuple[Rule | None, list[str]]:
     """Build one rule, or explain why the line cannot be used."""
     parts = line.split()
     pattern, owners = parts[0], parts[1:]
 
     if pattern.startswith("!"):
         return None, [
-            f"line {number}: negation ('!') is not supported by CODEOWNERS; "
-            "put ignore patterns in teams.yml instead"
+            f"line {number}: negation ('!') is not supported by CODEOWNERS; put ignore patterns in teams.yml instead"
         ]
     if not owners:
         return None, [f"line {number}: pattern '{pattern}' has no owner"]
@@ -171,8 +198,7 @@ def _rule_from_line(
     bad = [owner for owner in owners if not is_owner_token(owner)]
     if bad:
         problems.append(
-            f"line {number}: unrecognised owner token(s) {bad!r} "
-            "(expected @user, @group or an email address)"
+            f"line {number}: unrecognised owner token(s) {bad!r} (expected @user, @group or an email address)"
         )
 
     try:

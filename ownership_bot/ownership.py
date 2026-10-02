@@ -81,9 +81,7 @@ def _finalise(
         result.matches[team].sort(key=lambda match: (match.kind, match.value))
 
     if unknown_tokens:
-        result.problems.append(
-            f"CODEOWNERS names owner token(s) with no teams.yml entry: {sorted(unknown_tokens)}"
-        )
+        result.problems.append(f"CODEOWNERS names owner token(s) with no teams.yml entry: {sorted(unknown_tokens)}")
 
     return result
 
@@ -95,6 +93,7 @@ def resolve_ownership(
     codeowners: ParsedCodeowners,
     identity_for: Callable[[str], str | None] | None = None,
     codeowners_ref: str = "",
+    codeowners_path: str = "",
     codeowners_found: bool = True,
     diffs_truncated: bool = False,
     extra_problems: list[str] | None = None,
@@ -104,6 +103,7 @@ def resolve_ownership(
     result = OwnershipResult(
         files_total=len(changed_files),
         codeowners_ref=codeowners_ref,
+        codeowners_path=codeowners_path,
         codeowners_found=codeowners_found,
         diffs_truncated=diffs_truncated,
         problems=list(codeowners.problems) + list(extra_problems or []),

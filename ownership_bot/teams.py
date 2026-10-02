@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import fnmatch
+import logging
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ import yaml
 
 from .codeowners import translate_pattern
 from .models import ALL_EVENTS, MergeRequest
+
+log = logging.getLogger(__name__)
 
 
 class ManifestError(ValueError):
@@ -76,11 +79,7 @@ class Manifest:
 
         Uses the regexes compiled once at load time instead of recompiling per file.
         """
-        return [
-            pattern
-            for pattern, regex in zip(self.ignore, self._ignore_regexes, strict=True)
-            if regex.match(path)
-        ]
+        return [pattern for pattern, regex in zip(self.ignore, self._ignore_regexes, strict=True) if regex.match(path)]
 
     def is_ignored_author(self, username: str) -> bool:
         return any(fnmatch.fnmatchcase(username, pattern) for pattern in self.ignore_authors)
@@ -152,9 +151,7 @@ class Manifest:
             )
         )
         problems.extend(
-            _shared_value_problems(
-                seen_labels, lambda label, keys: f"label '{label}' is shared by teams {keys}"
-            )
+            _shared_value_problems(seen_labels, lambda label, keys: f"label '{label}' is shared by teams {keys}")
         )
         problems.extend(
             _shared_value_problems(
@@ -177,10 +174,8 @@ def _as_tuple(value, name: str, team_key: str) -> tuple:
 def _as_int(value, name: str, team_key: str) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
-        raise ManifestError(
-            f"team '{team_key}': '{name}' must be an integer, got {value!r}"
-        ) from None
+    except TypeError, ValueError:
+        raise ManifestError(f"team '{team_key}': '{name}' must be an integer, got {value!r}") from None
 
 
 def _team_problems(key: str, team: Team) -> list[str]:
@@ -199,9 +194,7 @@ def _team_problems(key: str, team: Team) -> list[str]:
     return problems
 
 
-def _add_seen(
-    index: dict[str, list[str]], value: str | None, key: str, *, fold_case: bool = False
-) -> None:
+def _add_seen(index: dict[str, list[str]], value: str | None, key: str, *, fold_case: bool = False) -> None:
     if not value:
         return
     index.setdefault(value.lower() if fold_case else value, []).append(key)
@@ -230,8 +223,7 @@ def _team_from(key: str, raw: dict, defaults: dict) -> Team:
     token = pick("codeowners_token", None) or (f"@{gitlab_group}" if gitlab_group else None)
     if not token:
         raise ManifestError(
-            f"team '{key}': set 'codeowners_token' (the token written in CODEOWNERS) "
-            "or 'gitlab_group' to derive it"
+            f"team '{key}': set 'codeowners_token' (the token written in CODEOWNERS) or 'gitlab_group' to derive it"
         )
 
     notify_on = _as_tuple(pick("notify_on", defaults.get("notify_on")), "notify_on", key)
@@ -269,6 +261,33 @@ def _load_teams(raw_teams, defaults: dict, source: str) -> dict[str, Team]:  # n
     return {key: _team_from(key, raw, defaults) for key, raw in raw_teams.items()}
 
 
+def _token_index(teams: dict[str, Team], source: str) -> dict[str, str]:
+    """Map each owner token to exactly one team.
+
+    A token shared by two teams is a configuration mistake (``validation_problems``
+    names it, and the drift report surfaces it). At run time the last declaration must
+    not silently win, so the first team keeps the token and the collision is logged.
+    """
+    index: dict[str, str] = {}
+    shared: dict[str, list[str]] = {}
+    for key, team in teams.items():
+        previous = index.get(team.codeowners_token)
+        if previous is None:
+            index[team.codeowners_token] = key
+        else:
+            shared.setdefault(team.codeowners_token, [previous]).append(key)
+
+    for token, keys in shared.items():
+        log.warning(
+            "%s: codeowners_token '%s' is shared by teams %s; notifications use '%s'",
+            source,
+            token,
+            keys,
+            index[token],
+        )
+    return index
+
+
 def _load_overlay(data: dict, teams: dict[str, Team], source: str) -> list[OverlayRule]:
     overlay: list[OverlayRule] = []
     for entry in data.get("module_overlay") or ():
@@ -284,7 +303,11 @@ def _load_overlay(data: dict, teams: dict[str, Team], source: str) -> list[Overl
 
 
 def load_manifest_text(text: str, *, source: str = "teams.yml") -> Manifest:
-    data = yaml.safe_load(text) or {}
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ManifestError(f"{source}: invalid YAML: {exc}") from exc
+    data = data or {}
     if not isinstance(data, dict):
         raise ManifestError(f"{source}: top level must be a mapping")
 
@@ -299,15 +322,21 @@ def load_manifest_text(text: str, *, source: str = "teams.yml") -> Manifest:
         raise ManifestError(f"{source}: 'defaults' must be a mapping")
 
     teams = _load_teams(data.get("teams"), defaults, source)
-    token_to_team = {team.codeowners_token: key for key, team in teams.items()}
+    token_to_team = _token_index(teams, source)
     ignore = tuple(data.get("ignore") or ())
+
+    skip_label = data.get("skip_label")
+    if skip_label is None:
+        # `or` (or a falsy check) would turn an explicit `skip_label: ""` — the documented
+        # way to disable the escape hatch — back into the default label.
+        skip_label = "ownership-bot::skip"
 
     return Manifest(
         teams=teams,
         token_to_team=token_to_team,
         ignore=ignore,
         ignore_authors=tuple(data.get("ignore_authors") or ()),
-        skip_label=data.get("skip_label") or "ownership-bot::skip",
+        skip_label=skip_label,
         module_overlay=tuple(_load_overlay(data, teams, source)),
         source=source,
         _ignore_regexes=tuple(translate_pattern(pattern) for pattern in ignore),

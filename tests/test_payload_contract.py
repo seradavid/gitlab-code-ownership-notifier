@@ -102,6 +102,42 @@ def test_payload_envelope_matches_the_contract(manifest):
     assert payload["actions_taken"] == ["label_added:team::payments"]
 
 
+def test_ownership_change_reports_the_path_the_repo_actually_uses(manifest):
+    """A root ``CODEOWNERS`` must not be reported as ``.gitlab/CODEOWNERS``."""
+    ownership = OwnershipResult(codeowners_path="CODEOWNERS")
+    decision = Decision(
+        team="payments",
+        events=(OWNERSHIP_CHANGED,),
+        removed_patterns=("src/legacy/**",),
+        ownership_path="CODEOWNERS",
+    )
+
+    payload = build_payload(
+        decision=decision,
+        mr=make_mr(),
+        ownership=ownership,
+        approvals=Approvals(),
+        manifest=manifest,
+    )
+
+    assert payload["ownership"]["path"] == "CODEOWNERS"
+    assert payload["ownership_change"]["file"] == "CODEOWNERS"
+
+
+def test_files_ignored_is_part_of_the_ownership_summary(manifest):
+    ownership = OwnershipResult(files_total=12, files_ignored=3, files_unclaimed=2)
+
+    payload = build_payload(
+        decision=Decision(team="payments", events=(MR_PIPELINE_GREEN,)),
+        mr=make_mr(),
+        ownership=ownership,
+        approvals=Approvals(),
+        manifest=manifest,
+    )
+
+    assert payload["ownership"]["files_ignored"] == 3
+
+
 def test_owners_approved_reflects_the_resolved_roster(manifest):
     """Approvers are credited against the full roster, not just `members`."""
     approvals = Approvals(approved_by=("zoe", "k.lee"))
@@ -120,9 +156,7 @@ def test_owners_approved_reflects_the_resolved_roster(manifest):
 
 
 def test_two_events_travel_in_one_message(manifest):
-    payload = make_payload(
-        manifest, events=(MR_PIPELINE_GREEN, OWNERSHIP_CHANGED), removed=("src/legacy/**",)
-    )
+    payload = make_payload(manifest, events=(MR_PIPELINE_GREEN, OWNERSHIP_CHANGED), removed=("src/legacy/**",))
     assert payload["events"] == [MR_PIPELINE_GREEN, OWNERSHIP_CHANGED]
     assert payload["ownership_change"]["removed"] == ["src/legacy/**"]
 
@@ -162,6 +196,15 @@ def test_notifier_reports_failure_without_raising(manifest):
 
 def test_notifier_without_url_is_a_no_op(manifest):
     assert Notifier(workflow_url="").post(make_payload(manifest)) is False
+
+
+def test_notifier_refuses_to_send_unsigned_without_a_secret(manifest):
+    """An unsigned body cannot be authenticated by the flow, so it is not sent."""
+    session = FakeSession()
+    notifier = Notifier(workflow_url="https://flow.example.com/hook", session=session)
+
+    assert notifier.post(make_payload(manifest)) is False
+    assert session.calls == []
 
 
 def test_null_notifier_records_instead_of_sending(manifest):

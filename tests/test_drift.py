@@ -64,9 +64,7 @@ def test_drift_flags_stale_patterns_and_counts_files(tmp_path):
     assert entry.uncovered is False
 
     # the index has one entry per non-stale rule
-    assert [row["pattern"] for row in report.index["acme/a"]] == [
-        "src/main/java/com/acme/payments/**"
-    ]
+    assert [row["pattern"] for row in report.index["acme/a"]] == ["src/main/java/com/acme/payments/**"]
 
     assert (tmp_path / "drift.json").exists()
     assert (tmp_path / "drift.md").exists()
@@ -113,3 +111,23 @@ def test_markdown_lists_uncovered_stale_and_roster_problems():
     assert "acme/a" in markdown
     assert "Roster and policy problems" in markdown
     assert "Most-ignored paths" in markdown
+
+
+def test_drift_survives_an_unwritable_output_path(tmp_path):
+    """The report is advisory; a bad path must not fail the job (§11)."""
+    client = StubClient(
+        None,
+        TREE,
+        projects=[{"id": 1, "path_with_namespace": "acme/a", "default_branch": "main"}],
+    )
+    unwritable = tmp_path / "missing-dir" / "drift.json"
+
+    report = run_drift(
+        manifest=make_manifest(),
+        client=client,
+        group="acme",
+        out_json=unwritable,
+        out_md=tmp_path / "drift.md",
+    )
+
+    assert len(report.projects) == 1  # it still produced the report in memory

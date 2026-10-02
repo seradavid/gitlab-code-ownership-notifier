@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Protocol
 
 from . import decisions, identity, notify, ownership
-from .codeowners import ParsedCodeowners, parse, team_pattern_delta
+from .codeowners import CODEOWNERS_PATHS, ParsedCodeowners, parse, team_pattern_delta
 from .config import MODE_REPORT, Settings
 from .gitlab import GitLabError
 from .models import Approvals, MergeRequest, OwnershipResult
@@ -42,6 +42,8 @@ class RunnerClient(Protocol):
     """The GitLab operations the job runners use (a subset of :class:`GitLab`)."""
 
     def codeowners(self, project: str | int, ref: str) -> tuple[str | None, str]: ...
+
+    def raw_file(self, project: str | int, path: str, ref: str) -> str | None: ...
 
     def merge_request_diffs(self, project: str | int, iid: int) -> tuple[list[str], bool]: ...
 
@@ -138,9 +140,7 @@ def changed_files_for(
 ) -> tuple[list[str], bool]:
     if changed_files_file:
         paths = [
-            line.strip()
-            for line in Path(changed_files_file).read_text(encoding="utf-8").splitlines()
-            if line.strip()
+            line.strip() for line in Path(changed_files_file).read_text(encoding="utf-8").splitlines() if line.strip()
         ]
         return paths, False
     if client is None:
@@ -185,6 +185,66 @@ def make_roster_lookup(
 # ------------------------------------------------------------------------ ownership
 
 
+def _codeowners_label(path: str, repo_root: Path) -> str:
+    """A repository-relative label for CODEOWNERS, not a developer's absolute path."""
+    if not path:
+        return ""
+    candidate = Path(path)
+    if candidate.is_absolute():
+        try:
+            return candidate.relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            return candidate.name
+    return path
+
+
+def _codeowners_touched(changed_files: list[str]) -> bool:
+    """True when the MR edits one of the paths GitLab treats as CODEOWNERS."""
+    return any(path in CODEOWNERS_PATHS for path in changed_files)
+
+
+def _fetch_codeowners_at_head(ctx: RunContext, project: str | int, mr: MergeRequest) -> str | None:
+    """The MR's own CODEOWNERS, for the ownership-change delta (§9.4).
+
+    Read from the head commit of the source branch. ``None`` means there is no client
+    or head ref to read (offline); a missing file becomes an empty document, because
+    callers only ask when the diff touches CODEOWNERS — so a missing file is the MR
+    deleting it, and the delta must still report the patterns that disappear.
+    """
+    client = ctx.client
+    if client is None:
+        return None
+    head = ctx.settings.commit_sha or mr.source_branch
+    if not head:
+        return None
+    try:
+        text, _path = client.codeowners(project, head)
+    except GitLabError as exc:
+        log.warning("could not read CODEOWNERS at %s: %s", head, exc)
+        return None
+    return text or ""
+
+
+def _identity_resolver(ctx: RunContext, project: str | int, mr: MergeRequest):
+    """Resolve module identities from a local checkout, falling back to the API.
+
+    The shipped component runs with ``GIT_STRATEGY: none`` (no checkout), so the API
+    is what makes ``module_overlay`` work there; a local checkout is the cheaper path
+    when one exists (developer machines, jobs that do check out).
+    """
+    settings = ctx.settings
+    client = ctx.client
+    if client is None:
+        return identity.identity_resolver(settings.repo_root)
+
+    ref = settings.commit_sha or mr.source_branch or mr.target_branch or settings.default_branch
+
+    def read_remote(path: str) -> str | None:
+        return client.raw_file(project, path, ref)
+
+    return identity.identity_resolver(settings.repo_root, remote=read_remote)
+
+
 def resolve_for_mr(
     ctx: RunContext,
     *,
@@ -193,30 +253,35 @@ def resolve_for_mr(
     changed_files: list[str],
     diffs_truncated: bool,
     codeowners_files: tuple[str | None, str | None] = (None, None),
+    after_from_mr: bool = False,
 ) -> tuple[OwnershipResult, dict, ParsedCodeowners]:
     """Resolve ownership and, when the MR edits CODEOWNERS, the per-team pattern delta.
 
-    Returns the parsed target-branch CODEOWNERS as well, so callers can derive
-    ``@user`` roster tokens without a second fetch.
+    The MR's own CODEOWNERS is fetched from its head commit when ``after_from_mr`` is
+    set and no explicit ``after`` was passed (the offline ``--codeowners-after-file``).
+    Returns the parsed target-branch CODEOWNERS as well, so callers can derive ``@user``
+    roster tokens without a second fetch.
     """
     manifest = ctx.require_manifest()
     before_text, after_text = codeowners_files
 
     if before_text is None:
-        codeowners, found, ref = fetch_codeowners(ctx.settings, ctx.client, project, mr.target_branch)
+        codeowners, found, path = fetch_codeowners(ctx.settings, ctx.client, project, mr.target_branch)
     else:
-        codeowners, found, ref = parse(before_text), True, mr.target_branch
+        codeowners, found, path = parse(before_text), True, ctx.settings.codeowners_path
 
-    resolver = None
-    if manifest.module_overlay:
-        resolver = identity.identity_resolver(ctx.settings.repo_root)
+    if after_text is None and after_from_mr and _codeowners_touched(changed_files):
+        after_text = _fetch_codeowners_at_head(ctx, project, mr)
+
+    resolver = _identity_resolver(ctx, project, mr) if manifest.module_overlay else None
 
     result = ownership.resolve_ownership(
         changed_files=changed_files,
         manifest=manifest,
         codeowners=codeowners,
         identity_for=resolver,
-        codeowners_ref=ref or mr.target_branch,
+        codeowners_ref=path or mr.target_branch,
+        codeowners_path=_codeowners_label(path, ctx.settings.repo_root),
         codeowners_found=found,
         diffs_truncated=diffs_truncated,
     )
@@ -254,17 +319,18 @@ def _send_or_mark_report(settings: Settings, notifier, payload: dict) -> bool:
         return delivered
 
     notifier.post(payload)  # NullNotifier in report mode
-    payload["actions_taken"].append(
-        "report-only" if settings.mode == MODE_REPORT else "notify-skipped"
-    )
+    payload["actions_taken"].append("report-only" if settings.mode == MODE_REPORT else "notify-skipped")
     return False
 
 
 def _write_labels(ctx: RunContext, *, project: str | int, iid: int, labels: list[str]) -> None:
     if not (ctx.settings.writes_enabled and labels):
         return
+    if ctx.client is None:
+        log.warning("no GitLab client — labels %s not applied", labels)
+        return
     try:
-        ctx.client.add_labels(project, iid, labels)  # type: ignore[union-attr]
+        ctx.client.add_labels(project, iid, labels)
     except GitLabError:
         log.exception("could not add labels %s", labels)
 
@@ -307,11 +373,11 @@ def _dispatch_mr_check(
             continue
 
         label = manifest.team(decision.team).label
-        payload["actions_taken"].append(
-            f"label_added:{label}" if settings.writes_enabled else f"label-skipped:{label}"
-        )
-        if settings.writes_enabled:
+        if settings.writes_enabled and ctx.client is not None:
+            payload["actions_taken"].append(f"label_added:{label}")
             labels_to_add.append(label)
+        else:
+            payload["actions_taken"].append(f"label-skipped:{label}")
         sent.append(payload)
 
     _write_labels(ctx, project=project, iid=mr.iid, labels=labels_to_add)
@@ -333,6 +399,10 @@ def run_mr_check(
     manifest = ctx.require_manifest()
     project = settings.project_id or mr.project_path
 
+    # A suppressed MR yields no decisions, so its ownership-change delta — and the
+    # extra head-CODEOWNERS read that computing it needs — is not worth fetching.
+    suppressed = manifest.skip_label in mr.labels or manifest.is_ignored_author(mr.author_username)
+
     ownership_result, delta, codeowners = resolve_for_mr(
         ctx,
         project=project,
@@ -340,6 +410,7 @@ def run_mr_check(
         changed_files=changed_files,
         diffs_truncated=diffs_truncated,
         codeowners_files=codeowners_files,
+        after_from_mr=not suppressed,
     )
 
     roster_for, unresolved = make_roster_lookup(manifest, codeowners, ctx.client)
@@ -445,9 +516,9 @@ def _dispatch_merge_audit(
             sent.append(payload)
             continue
 
-        if settings.writes_enabled:
+        if settings.writes_enabled and ctx.client is not None:
             try:
-                ctx.client.add_note(project, mr.iid, _audit_note(decision.team, marker))  # type: ignore[union-attr]
+                ctx.client.add_note(project, mr.iid, _audit_note(decision.team, marker))
                 payload["actions_taken"].append("note_added")
             except GitLabError:
                 log.exception("could not add audit note")
@@ -544,17 +615,17 @@ def _notes_text(ctx: RunContext, project: str | int, iid: int) -> str:
 def _notifier(settings: Settings):
     if not settings.notify_enabled:
         return notify.NullNotifier()
-    return notify.Notifier(
-        workflow_url=settings.pa_workflow_url, shared_secret=settings.pa_shared_secret
-    )
+    return notify.Notifier(workflow_url=settings.pa_workflow_url, shared_secret=settings.pa_shared_secret)
 
 
 def upstream_failed(settings: Settings, client: RunnerClient | None) -> bool:
-    """True when a job *before* ours failed and was not allowed to fail.
+    """True when a job failed without ``allow_failure`` anywhere in this pipeline.
 
-    This is what makes the "only notify when the pipeline passed" rule
-    independent of where the job sits, so ``.post`` and an explicit final stage
-    behave identically (§6.1, Q4).
+    The name says "upstream" because that is the intent: ``ownership-mr-check`` sits last
+    (``stage: .post``), so every other job *is* upstream. The GitLab jobs API does not
+    return a stable stage index we can order against, so the check is conservative: any
+    other non-allowed failure counts. That can only suppress a notification, never send
+    one on a red pipeline (§6.1, Q4).
     """
     if not settings.verify_upstream or client is None:
         return False
@@ -571,7 +642,7 @@ def upstream_failed(settings: Settings, client: RunnerClient | None) -> bool:
         if str(job.get("id")) == own:
             continue
         if job.get("status") in ("failed", "canceled") and not job.get("allow_failure", False):
-            log.info("upstream job '%s' failed — not sending notifications", job.get("name"))
+            log.info("job '%s' failed without allow_failure — not sending notifications", job.get("name"))
             return True
     return False
 
