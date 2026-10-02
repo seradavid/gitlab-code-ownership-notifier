@@ -3,7 +3,7 @@
 [![CI](https://github.com/seradavid/gitlab-code-ownership-notifier/actions/workflows/ci.yml/badge.svg)](https://github.com/seradavid/gitlab-code-ownership-notifier/actions/workflows/ci.yml)
 [![GitLab pipeline](https://gitlab.com/seradavid/gitlab-code-ownership-notifier/badges/master/pipeline.svg)](https://gitlab.com/seradavid/gitlab-code-ownership-notifier/-/pipelines)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://www.python.org/downloads/)
 
 > **Two hosts, on purpose.** The engine, tests and issue tracker are on
 > [GitHub](https://github.com/seradavid/gitlab-code-ownership-notifier). The component is
@@ -304,7 +304,7 @@ ruff check .                          # lint
 python scripts/check_component.py     # the component template must stay valid
 ```
 
-CI runs all three on Python 3.11–3.13, plus the offline end-to-end demo and an image build.
+CI runs on Python 3.14, plus the offline end-to-end demo and an image build.
 Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md), and note that changes
 which could fail a pipeline or block a merge need a discussion first.
 

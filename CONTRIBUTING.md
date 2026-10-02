@@ -24,7 +24,7 @@ pytest                                   # must be green
 python scripts/check_component.py        # the CI/CD component must stay valid
 ```
 
-CI runs the same two checks on Python 3.11, 3.12 and 3.13, plus a build of the image.
+CI runs the same two checks on Python 3.14, plus a build of the image.
 
 ## What is easy to accept
 
@@ -50,7 +50,7 @@ Open an issue before writing code for:
 
 ## Style
 
-- Python 3.11+, standard library first. `requests` and `PyYAML` are the only runtime
+- Python 3.14+, standard library first. `requests` and `PyYAML` are the only runtime
   dependencies and that should not change casually.
 - Pure logic in pure functions; I/O at the edges (`runner.py`, `gitlab.py`, `notify.py`).
 - Comments explain *why*, especially where GitLab's behaviour is surprising. The CODEOWNERS

@@ -150,11 +150,11 @@ def test_ensure_include_refuses_an_inline_include():
 
 
 def test_ensure_include_keeps_comments_untouched():
-    ci = "# our pipeline\ndefault:\n  image: python:3.11\n"
+    ci = "# our pipeline\ndefault:\n  image: python:3.14\n"
     updated = ensure_include(ci, COMPONENT)
 
     assert "# our pipeline" in updated
-    assert "image: python:3.11" in updated
+    assert "image: python:3.14" in updated
 
 
 def test_uncovered_prefixes_lists_directories_no_rule_claims():
